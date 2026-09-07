@@ -1,0 +1,67 @@
+services:
+  app:
+    build: .
+    container_name: oficina-api
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      DB_URL: jdbc:postgresql://db:5432/oficina_db
+      DB_USERNAME: oficina
+      DB_PASSWORD: oficina
+      JWT_SECRET: ZmljYXAtb2ZpY2luYS1hcGktc2VjcmV0LWtleS1tdXN0LWJlLWF0LWxlYXN0LTI1Ni1iaXRzLWxvbmch
+      # Webhook de decisão de orçamento (Etapa 7)
+      WEBHOOK_ORCAMENTO_TOKEN: dev-webhook-token-change-me
+      # Notificação de status por e-mail (Etapa 8) — envia para o Mailhog local
+      NOTIFICACAO_EMAIL_ENABLED: "true"
+      NOTIFICACAO_EMAIL_REMETENTE: nao-responder@oficina.com
+      MAIL_HOST: mailhog
+      MAIL_PORT: "1025"
+      MAIL_SMTP_AUTH: "false"
+      MAIL_SMTP_STARTTLS: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+      mailhog:
+        condition: service_started
+    networks:
+      - oficina-network
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    container_name: oficina-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: oficina_db
+      POSTGRES_USER: oficina
+      POSTGRES_PASSWORD: oficina
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oficina -d oficina_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oficina-network
+
+  # Servidor SMTP de desenvolvimento — captura os e-mails de notificação.
+  # UI web em http://localhost:8025
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: oficina-mailhog
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # UI web
+    networks:
+      - oficina-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  oficina-network:
+    driver: bridge

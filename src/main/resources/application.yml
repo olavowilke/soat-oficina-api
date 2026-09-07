@@ -1,0 +1,115 @@
+spring:
+  application:
+    name: oficina-api
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/oficina_db}
+    username: ${DB_USERNAME:oficina}
+    password: ${DB_PASSWORD:oficina}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:false}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:false}
+
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /api
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # prometheus/metrics: endpoint Prometheus/OpenMetrics do Micrometer. O
+        # agente Java do New Relic (newrelic.jar, -javaagent no Dockerfile/
+        # entrypoint.sh) NÃO lê este endpoint — ele não tem nenhum módulo de
+        # instrumentação para Micrometer/Prometheus (conferido na lista de
+        # módulos do agente, github.com/newrelic/newrelic-java-agent/tree/main/
+        # instrumentation: não há "micrometer" nem "dropwizard"); ele continua
+        # responsável só pelas métricas de APM (transações, erros, tempo de
+        # resposta), via instrumentação de bytecode, à parte deste endpoint.
+        # Quem de fato pode consumir este endpoint é o nri-prometheus
+        # (componente do bundle Helm nri-bundle, habilitado em
+        # infra-k8s/terraform/newrelic.tf via "nri-prometheus.enabled") — um
+        # scraper Prometheus que roda no cluster e encaminha ao New Relic,
+        # sem relação com o agente Java. O nri-prometheus só descobre alvos
+        # via anotações (`prometheus.io/scrape` e afins); elas ficam no
+        # template de pod do Deployment (infra-k8s/k8s/base/deployment.yaml),
+        # apontando para /api/actuator/prometheus na porta 8080. É por esse
+        # caminho que as métricas de negócio (oficina.ordens.*) chegam ao New
+        # Relic e alimentam os painéis e a condição de alerta
+        # "falha_processamento_os".
+        include: health,info,prometheus,metrics
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        # Habilita /api/actuator/health/liveness e /readiness — os mesmos
+        # caminhos usados pelas probes do Deployment (infra-k8s/k8s/base) e
+        # pelo health check do target group do NLB (infra-k8s/terraform/nlb.tf).
+        enabled: true
+  health:
+    liveness-state:
+      enabled: true
+    readiness-state:
+      enabled: true
+  metrics:
+    tags:
+      # As condições de alerta 1 e 2 (infra-k8s/observability/alertas.md)
+      # filtram `WHERE appName = 'oficina-api'` no lado do New Relic; esta tag
+      # garante que as métricas de negócio no Prometheus/Micrometer também
+      # carregam a mesma identificação de aplicação.
+      application: oficina-api
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:ZmljYXAtb2ZpY2luYS1hcGktc2VjcmV0LWtleS1tdXN0LWJlLWF0LWxlYXN0LTI1Ni1iaXRzLWxvbmch}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  admin:
+    username: ${ADMIN_USERNAME:admin}
+    password: ${ADMIN_PASSWORD:admin123}
+  webhook:
+    orcamento:
+      # Token compartilhado que autentica notificações externas de decisão de orçamento.
+      token: ${WEBHOOK_ORCAMENTO_TOKEN:dev-webhook-token-change-me}
+  notificacao:
+    email:
+      # Em dev/test o envio real fica desabilitado (usa LogNotificacaoGateway).
+      # Em produção defina true e configure spring.mail.* (SMTP/SendGrid).
+      enabled: ${NOTIFICACAO_EMAIL_ENABLED:false}
+      remetente: ${NOTIFICACAO_EMAIL_REMETENTE:nao-responder@oficina.com}
+
+logging:
+  level:
+    br.com.oficina: INFO
+    org.hibernate.SQL: WARN

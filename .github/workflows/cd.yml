@@ -1,0 +1,124 @@
+name: CD - Build image & Deploy (oficina-api)
+
+# Equivalente ao .github/workflows/cd.yml da raiz do monorepo, mas com
+# caminhos relativos a raiz DESTE repositorio (soat-oficina-api). Depois do
+# split (scripts/split-repos.sh, ADR-0004) a aplicacao ocupa a raiz do
+# proprio repositorio, entao "context: oficina-api" (correto no monorepo,
+# onde o Dockerfile fica em oficina-api/Dockerfile) vira "context: ." aqui -
+# o Dockerfile ja esta na raiz deste repositorio. So ativa depois do split:
+# dentro do monorepo quem roda e o par de workflows da raiz.
+#
+# Publica a imagem da oficina-api no ECR e atualiza a imagem do Deployment ja
+# existente no cluster EKS provisionado por infra-k8s (Tarefa 2/3). Esta
+# pipeline NAO roda Terraform, NAO cria/atualiza o Secret oficina-secrets e
+# NAO conhece manifestos Kubernetes de nenhum tipo (kustomize, overlays) -
+# isso e tudo responsabilidade de infra-k8s/.github/workflows/cd.yml, que
+# garante que o cluster, o Namespace, o ConfigMap/Secret, o Deployment
+# inicial, o Service, o HPA e o PDB ja existem e estao saudaveis.
+#
+# Divisao de dono, deliberada (Tarefa 8): cada um dos 4 repositorios so pode
+# depender do que os outros publicam via SSM (ADR-0005), nunca de arquivos
+# (manifestos, overlays kustomize) que vivem em outro repositorio - depois do
+# split, `infra-k8s/k8s/` simplesmente nao existe dentro do checkout deste
+# repositorio. Por isso:
+#   - `soat-infra-k8s` e dono do ESTADO DESEJADO dos manifestos (recursos,
+#     replicas, HPA, PDB, etc.) e quem aplica (`kubectl apply -k`).
+#   - `soat-oficina-api` (este repositorio) e dono so da IMAGEM: builda,
+#     publica no ECR e troca a tag do Deployment ja existente via
+#     `kubectl set image`, sem tocar em mais nenhum campo do recurso.
+# Isso tambem e o que torna as duas pipelines seguras para rodar de forma
+# independente uma da outra (o requisito do "4 repositorios com CI/CD
+# proprio" da especificacao): um push aqui nunca reescreve replicas/HPA/etc.
+# definidos por infra-k8s, e um apply de infra-k8s nunca derruba a imagem
+# mais recente publicada por esta pipeline (o Deployment sobe com a imagem
+# que ja estava rodando).
+#   homolog -> ambiente homolog
+#   main    -> ambiente prod
+on:
+  push:
+    branches: [main, homolog]
+  workflow_dispatch:
+    inputs:
+      ambiente:
+        description: Ambiente alvo
+        required: true
+        default: homolog
+        type: choice
+        options: [homolog, prod]
+
+permissions:
+  id-token: write # OIDC para assumir a role na AWS, sem chave estatica
+  contents: read
+
+jobs:
+  build-and-deploy:
+    name: Build & push ECR + kubectl set image
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.ambiente || (github.ref_name == 'main' && 'prod' || 'homolog') }}
+    env:
+      AMBIENTE: ${{ github.event.inputs.ambiente || (github.ref_name == 'main' && 'prod' || 'homolog') }}
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Credenciais AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login no ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # O repositorio ECR e provisionado por infra-k8s/terraform/ecr.tf
+      # (aws_ecr_repository.oficina_api) - esta pipeline so le a URL
+      # publicada em SSM, sem hardcode de conta/regiao e sem tentar criar o
+      # repositorio ela mesma (single source of truth = Terraform).
+      - name: Ler URL do repositorio ECR (SSM)
+        id: ecr
+        run: |
+          REPO_URL="$(aws ssm get-parameter --name "/oficina/${AMBIENTE}/registry/repository-url" --query 'Parameter.Value' --output text)"
+          echo "repository_url=$REPO_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build e push da imagem
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.repository_url }}:sha-${{ github.sha }}
+            ${{ steps.ecr.outputs.repository_url }}:${{ env.AMBIENTE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # O nome do cluster e lido via SSM (contrato ADR-0005, mesmo padrao
+      # usado por infra-database/lambda-auth) em vez de `terraform output`,
+      # porque esta pipeline nao roda Terraform - so infra-k8s/cd.yml faz isso.
+      - name: aws eks update-kubeconfig
+        run: |
+          CLUSTER_NAME="$(aws ssm get-parameter --name "/oficina/${AMBIENTE}/cluster/name" --query 'Parameter.Value' --output text)"
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+
+      # Tag imutavel (sha-<git sha>), nao a flutuante <ambiente>, para o
+      # rollout - rastreabilidade e rollback seguro. So troca a imagem do
+      # container `oficina-api` no Deployment que ja existe (criado por
+      # infra-k8s/cd.yml) - nenhum outro campo do recurso e tocado, e nenhum
+      # manifesto/overlay kustomize de outro repositorio e lido.
+      - name: kubectl set image (troca so a tag da imagem)
+        run: |
+          kubectl -n oficina set image deployment/oficina-api \
+            "oficina-api=${{ steps.ecr.outputs.repository_url }}:sha-${{ github.sha }}"
+
+      - name: kubectl rollout status
+        run: kubectl -n oficina rollout status deploy/oficina-api --timeout=300s
+
+      # Smoke test contra o endpoint publico (API Gateway), lido via SSM
+      # (publicado por lambda-auth) - fecha o caminho ponta a ponta:
+      # API Gateway -> VPC Link -> NLB -> Service -> pod recem-implantado.
+      - name: Smoke test (health via API Gateway)
+        run: |
+          API_ENDPOINT="$(aws ssm get-parameter --name "/oficina/${AMBIENTE}/gateway/endpoint" --query 'Parameter.Value' --output text)"
+          curl -sf "${API_ENDPOINT%/}/api/actuator/health"

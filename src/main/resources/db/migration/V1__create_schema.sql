@@ -1,0 +1,2 @@
+-- Etapa 1: Schema inicial
+-- As tabelas serão criadas nas próximas etapas conforme os domínios forem implementados

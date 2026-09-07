@@ -1,0 +1,44 @@
+name: CI - Build & Test
+
+# Equivalente ao .github/workflows/ci.yml da raiz do monorepo, mas com
+# caminhos relativos a raiz DESTE repositorio (soat-oficina-api) - depois do
+# split (scripts/split-repos.sh, ADR-0004) a aplicacao passa a ocupar a raiz
+# do proprio repositorio, entao "working-directory: oficina-api" e
+# "path: oficina-api/..." (corretos no monorepo) deixam de existir aqui. So
+# ativa depois do split: dentro do monorepo quem roda e o par de workflows da
+# raiz.
+
+on:
+  push:
+    # main e homolog: as duas branches que disparam CD neste repositorio
+    # (cd.yml) e as duas cobertas pelos outros tres repositorios da Fase 3.
+    branches: [main, homolog]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build and run tests
+        run: mvn verify --batch-mode --no-transfer-progress -s settings.xml
+
+      - name: Upload JaCoCo report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+          retention-days: 7
