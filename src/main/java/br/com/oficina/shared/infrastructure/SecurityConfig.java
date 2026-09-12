@@ -9,6 +9,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -65,7 +66,14 @@ public class SecurityConfig {
                         // Rotas públicas
                         .requestMatchers("/health", "/actuator/**").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                        .requestMatchers("/auth/**").permitAll()
+                        // Login é público; registro NÃO. POST /auth/register cria conta
+                        // com Role.MECANICO (ver AuthController) — como rota pública, ele
+                        // transformava qualquer requisição em um operador da oficina, com
+                        // acesso a /clientes/**, /veiculos/**, /servicos/** e /pecas/**.
+                        // Operador novo passa a ser criado por um ADMIN, ou pelo
+                        // AdminInitializer no primeiro start.
+                        .requestMatchers(HttpMethod.POST, "/auth/register").hasRole("ADMIN")
+                        .requestMatchers("/auth/login").permitAll()
                         .requestMatchers("/public/**").permitAll()
                         // Webhooks: autenticados por token compartilhado no próprio controller
                         .requestMatchers("/webhooks/**").permitAll()
@@ -79,10 +87,29 @@ public class SecurityConfig {
                         .requestMatchers("/pecas/**").hasAnyRole("ADMIN", "MECANICO")
                         .requestMatchers("/clientes/**").hasAnyRole("ADMIN", "MECANICO")
                         .requestMatchers("/veiculos/**").hasAnyRole("ADMIN", "MECANICO")
-                        // /ordens-servico/**: alcançável por clientes autenticados (role CLIENTE)
-                        // além dos operadores - qualquer autenticado chega aqui. NÃO há checagem de
-                        // posse (um cliente autenticado ainda pode ler/avançar a OS de outro
-                        // cliente) - mudança maior de design, fora do escopo desta correção.
+                        // Ordens de serviço, divididas por quem opera a oficina e quem é dono
+                        // da ordem. Antes tudo aqui caía em anyRequest().authenticated(): um
+                        // token de CLIENTE (emitido por lambda-auth só com o CPF) lia e
+                        // alterava a ordem de qualquer outro cliente, e drenava estoque de
+                        // peça — AdicionarPecaUseCase chama peca.ajustarEstoque(-quantidade).
+                        //
+                        // Operação da oficina: só operador. A ordem destes matchers importa —
+                        // os literais vêm antes de qualquer curinga de {id}.
+                        .requestMatchers("/ordens-servico/abertura").hasAnyRole("ADMIN", "MECANICO")
+                        .requestMatchers("/ordens-servico/monitoramento/**").hasAnyRole("ADMIN", "MECANICO")
+                        .requestMatchers("/ordens-servico/*/servicos/**").hasAnyRole("ADMIN", "MECANICO")
+                        .requestMatchers("/ordens-servico/*/pecas/**").hasAnyRole("ADMIN", "MECANICO")
+                        .requestMatchers("/ordens-servico/*/status").hasAnyRole("ADMIN", "MECANICO")
+                        .requestMatchers(HttpMethod.POST, "/ordens-servico").hasAnyRole("ADMIN", "MECANICO")
+                        // Listagem sem filtro devolve a oficina inteira: só operador.
+                        .requestMatchers(HttpMethod.GET, "/ordens-servico").hasAnyRole("ADMIN", "MECANICO")
+                        // Rotas da própria ordem. O papel não decide nada aqui: todo cliente
+                        // tem o mesmo papel CLIENTE. Quem decide é AcessoOrdemServico, dentro
+                        // do controller, comparando o dono da ordem com a claim clienteId do
+                        // token.
+                        .requestMatchers("/ordens-servico/*/aprovar-orcamento",
+                                "/ordens-servico/*/recusar-orcamento").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/ordens-servico/*").authenticated()
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex

@@ -12,9 +12,9 @@ import static org.junit.jupiter.api.Assertions.*;
 class AuthControllerIT extends BaseControllerIT {
 
     @Test
-    void shouldReturn201WhenRegisteringNewUser() {
+    void shouldReturn201WhenAdminRegistersNewUser() {
         RegisterRequest request = new RegisterRequest("mecanico1", "senha123");
-        ResponseEntity<UsuarioResponse> response = restTemplate.postForEntity(
+        ResponseEntity<UsuarioResponse> response = authPost(
                 "/auth/register", request, UsuarioResponse.class);
 
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
@@ -24,21 +24,34 @@ class AuthControllerIT extends BaseControllerIT {
     }
 
     @Test
-    void publicRegisterShouldAlwaysCreateMecanicoEvenIfClientAttemptsAdmin() {
-        // Regression: public /auth/register previously accepted a role field and
-        // allowed unauthenticated ADMIN creation. The field was removed, so any
-        // extra fields are ignored and the created user must always be MECANICO.
+    void registerShouldAlwaysCreateMecanicoEvenIfCallerAttemptsAdmin() {
+        // Regressao: /auth/register ja aceitou um campo role e criava ADMIN. O
+        // campo foi removido, entao campo extra e ignorado e o usuario criado e
+        // sempre MECANICO - mesmo com um ADMIN chamando.
         var body = new java.util.HashMap<String, Object>();
         body.put("username", "mecanico_admin_attempt");
         body.put("password", "senha123");
-        body.put("role", "ADMIN"); // ignored server-side
+        body.put("role", "ADMIN"); // ignorado no servidor
 
-        ResponseEntity<UsuarioResponse> response = restTemplate.postForEntity(
+        ResponseEntity<UsuarioResponse> response = authPost(
                 "/auth/register", body, UsuarioResponse.class);
 
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
         assertNotNull(response.getBody());
         assertEquals(Role.MECANICO, response.getBody().role());
+    }
+
+    @Test
+    void registerShouldReturn401WithoutToken() {
+        // Achado da revisao de seguranca da Fase 3: /auth/register era publico e
+        // criava conta MECANICO, ou seja, transformava qualquer requisicao num
+        // operador da oficina. Atras do API Gateway, qualquer token de CPF valido
+        // criava operadores a vontade.
+        RegisterRequest request = new RegisterRequest("intruso", "senha123");
+        ResponseEntity<Object> response = restTemplate.postForEntity(
+                "/auth/register", request, Object.class);
+
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
     }
 
     @Test
@@ -66,8 +79,7 @@ class AuthControllerIT extends BaseControllerIT {
     @Test
     void shouldReturn400WhenRegisteringDuplicateUsername() {
         RegisterRequest request = new RegisterRequest("admin", "qualquersenha");
-        ResponseEntity<Object> response = restTemplate.postForEntity(
-                "/auth/register", request, Object.class);
+        ResponseEntity<Object> response = authPost("/auth/register", request, Object.class);
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
     }
