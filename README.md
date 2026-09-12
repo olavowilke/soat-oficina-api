@@ -57,24 +57,9 @@ registrada em [`docs/adr/0001-clean-architecture.md`](https://github.com/olavowi
 
 ### Esta aplicação no caminho da requisição (AWS)
 
-```mermaid
-flowchart LR
-    CLIENTE[Cliente / Oficina] -->|"HTTPS"| GW["API Gateway (lambda-auth)"]
-    GW -->|"VPC Link + NLB interno"| SVC["Service oficina-api\n(NodePort 30080)"]
+![Caminho da requisição até a oficina-api na AWS](https://raw.githubusercontent.com/olavowilke/soat-oficina-api/main/docs/arquitetura/diagramas/caminho-requisicao-aws.png)
 
-    subgraph EKS["EKS — namespace oficina (infra-k8s)"]
-        SVC --> POD1["Pod oficina-api #1"]
-        SVC --> POD2["Pod oficina-api #2"]
-        HPA["HorizontalPodAutoscaler\nCPU 60% / memória 75%"] -.escala.-> POD1
-        HPA -.escala.-> POD2
-    end
-
-    POD1 --> RDS[("RDS PostgreSQL\ninfra-database")]
-    POD2 --> RDS
-    POD1 -->|SMTP| MAIL["Provedor SMTP\n(notificação por e-mail)"]
-    POD1 -->|"métricas + logs JSON"| NR["New Relic\n(dashboard + alertas)"]
-    EXTERNO["Sistema externo de orçamento"] -->|"webhook (X-Webhook-Token)"| SVC
-```
+O desenho é gerado por código, com ícones oficiais da AWS: [`docs/arquitetura/diagramas/caminho-requisicao-aws.py`](https://github.com/olavowilke/soat-oficina-api/blob/main/docs/arquitetura/diagramas/caminho-requisicao-aws.py). Para regerar, instale `graphviz` e rode `pip install diagrams && python docs/arquitetura/diagramas/caminho-requisicao-aws.py`.
 
 Este repositório é dono apenas da **imagem** (`Dockerfile`) e do **código**
 da aplicação; a rede, o cluster e os manifestos base (`Deployment`,
