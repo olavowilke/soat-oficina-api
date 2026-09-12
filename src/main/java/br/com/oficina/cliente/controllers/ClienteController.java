@@ -50,7 +50,7 @@ public class ClienteController {
         this.presenter = presenter;
     }
 
-    @Operation(summary = "Cadastrar cliente", description = "Cria um novo cliente com CPF ou CNPJ validado")
+    @Operation(summary = "Cadastrar cliente.", description = "Cria um novo cliente com CPF ou CNPJ validado")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Cliente criado",
                     content = @Content(schema = @Schema(implementation = ClienteResponse.class))),
