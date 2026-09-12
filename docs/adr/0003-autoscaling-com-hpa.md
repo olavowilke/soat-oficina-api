@@ -116,3 +116,20 @@ utilização como percentual do *request*, não do *limit*.
   - Para elevar esse teto de verdade no futuro: aumentar `node_max_size`
     **e** instalar o Cluster Autoscaler (hoje ausente), ou usar um tipo de
     instância maior — não basta subir `maxReplicas` sozinho.
+- **O rollout precisa de mais um pod do que o teto do HPA** — a conta acima
+  cobria o regime estável, não o deploy. O `Deployment` usa
+  `maxUnavailable: 0` e `maxSurge: 1`: durante a troca de imagem existe uma
+  réplica extra. Em homolog isso travou o CD da `oficina-api` em 11/09/2026:
+  - Um único `t3.medium` tinha 1930m alocáveis e 1200m já reservados pelos
+    pods de sistema — 450m de `kube-system` e 750m do `nri-bundle`. Sobravam
+    730m.
+  - *Request* por pod em homolog: `250m`. Dois pods cabiam, três pediam 750m.
+    Faltavam 20m.
+  - O HPA subia para 2 réplicas no meio do deploy, porque a JVM em boot passa
+    dos 60% de CPU. O rollout passava a querer 3 pods. O terceiro ficava
+    `Pending` e `maxUnavailable: 0` proibia o pod velho de sair para abrir
+    espaço. `kubectl rollout status` estourava o timeout de 300s.
+  - Correção: `environments/homolog.tfvars` foi para `node_min_size = 2`,
+    `node_desired_size = 2`, `node_max_size = 3`. O segundo nó só carrega os
+    `DaemonSet`s (600m), então sobram 1330m nele — folga para o teto do HPA
+    de homolog (3 réplicas) mais o pod do surge.
