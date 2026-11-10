@@ -1,7 +1,7 @@
 package br.com.oficina.shared.infrastructure;
 
+import br.com.oficina.saga.entities.SagaJaAtivaException;
 import br.com.oficina.shared.domain.ApiError;
-import br.com.oficina.shared.domain.AutenticacaoWebhookException;
 import br.com.oficina.shared.domain.RecursoNaoEncontradoException;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
@@ -63,16 +63,16 @@ public class GlobalExceptionHandler {
                 .body(ApiError.of(401, "Unauthorized", "Credenciais inválidas"));
     }
 
-    @ExceptionHandler(AutenticacaoWebhookException.class)
-    public ResponseEntity<ApiError> handleAutenticacaoWebhook(AutenticacaoWebhookException ex) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(ApiError.of(401, "Unauthorized", ex.getMessage()));
-    }
-
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiError.of(400, "Bad Request", ex.getMessage()));
+    }
+
+    @ExceptionHandler(SagaJaAtivaException.class)
+    public ResponseEntity<ApiError> handleSagaJaAtiva(SagaJaAtivaException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(409, "Conflict", ex.getMessage()));
     }
 
     @ExceptionHandler(IllegalStateException.class)

@@ -15,7 +15,7 @@ public class ListarOrdensServicoUseCase {
 
     /**
      * Ordem da fila de trabalho exigida pelo spec: por prioridade de status
-     * (EM_EXECUCAO &gt; AGUARDANDO_APROVACAO &gt; EM_DIAGNOSTICO &gt; RECEBIDA) e,
+     * (ver {@link StatusOS#prioridadeListagem()}: EM_EXECUCAO primeiro, RECEBIDA por último) e,
      * dentro do mesmo status, as mais antigas primeiro (data de criação ascendente).
      */
     private static final Comparator<OrdemServico> ORDEM_FILA =

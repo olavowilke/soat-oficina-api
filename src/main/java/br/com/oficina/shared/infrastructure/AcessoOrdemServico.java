@@ -14,9 +14,9 @@ import java.util.UUID;
  *
  * <p>Os matchers de {@link SecurityConfig} resolvem o papel: operação de
  * oficina é de operador. Sobram as rotas que um cliente usa na própria ordem —
- * consultar, aprovar e recusar orçamento. Ali o papel não basta: todo cliente
- * tem o mesmo papel {@code CLIENTE}, então sem esta checagem um cliente lê e
- * decide o orçamento de outro.
+ * consultar a ordem. Ali o papel não basta: todo cliente
+ * tem o mesmo papel {@code CLIENTE}, então sem esta checagem um cliente lê a
+ * ordem de outro.
  *
  * <p>A identidade vem da claim {@code clienteId} do JWT, que
  * {@link br.com.oficina.auth.infrastructure.JwtAuthenticationFilter} guarda nos

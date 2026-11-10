@@ -10,8 +10,6 @@ services:
       DB_USERNAME: oficina
       DB_PASSWORD: oficina
       JWT_SECRET: ZmljYXAtb2ZpY2luYS1hcGktc2VjcmV0LWtleS1tdXN0LWJlLWF0LWxlYXN0LTI1Ni1iaXRzLWxvbmch
-      # Webhook de decisão de orçamento (Etapa 7)
-      WEBHOOK_ORCAMENTO_TOKEN: dev-webhook-token-change-me
       # Notificação de status por e-mail (Etapa 8) — envia para o Mailhog local
       NOTIFICACAO_EMAIL_ENABLED: "true"
       NOTIFICACAO_EMAIL_REMETENTE: nao-responder@oficina.com
@@ -19,11 +17,18 @@ services:
       MAIL_PORT: "1025"
       MAIL_SMTP_AUTH: "false"
       MAIL_SMTP_STARTTLS: "false"
+      # SQS local (LocalStack). Em produção estas três variáveis não existem:
+      # o SDK usa o endpoint da AWS e as credenciais do Pod Identity.
+      SPRING_CLOUD_AWS_SQS_ENDPOINT: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
     depends_on:
       db:
         condition: service_healthy
       mailhog:
         condition: service_started
+      localstack:
+        condition: service_healthy
     networks:
       - oficina-network
     restart: unless-stopped
@@ -55,6 +60,27 @@ services:
     ports:
       - "1025:1025"  # SMTP
       - "8025:8025"  # UI web
+    networks:
+      - oficina-network
+    restart: unless-stopped
+
+  # SQS local. O script de init cria as filas e as DLQs. Porta 4566: awslocal / aws --endpoint-url.
+  localstack:
+    image: localstack/localstack:3.8
+    container_name: oficina-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: sqs
+      DEFAULT_REGION: us-east-1
+    volumes:
+      - ./docker/localstack/init-sqs.sh:/etc/localstack/init/ready.d/init-sqs.sh:ro
+    healthcheck:
+      # Pronto só depois do script de init: a última fila precisa existir.
+      test: ["CMD-SHELL", "awslocal sqs get-queue-url --queue-name oficina-homolog-execution-commands"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     networks:
       - oficina-network
     restart: unless-stopped

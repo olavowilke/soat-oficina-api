@@ -14,7 +14,6 @@ import br.com.oficina.ordemservico.usecases.AdicionarPecaCommand;
 import br.com.oficina.ordemservico.usecases.AdicionarPecaUseCase;
 import br.com.oficina.ordemservico.usecases.AdicionarServicoCommand;
 import br.com.oficina.ordemservico.usecases.AdicionarServicoUseCase;
-import br.com.oficina.ordemservico.usecases.AprovarOrcamentoUseCase;
 import br.com.oficina.ordemservico.usecases.AvancarStatusUseCase;
 import br.com.oficina.ordemservico.usecases.BuscarOrdemServicoUseCase;
 import br.com.oficina.ordemservico.usecases.CriarOrdemServicoCommand;
@@ -22,7 +21,6 @@ import br.com.oficina.ordemservico.usecases.CriarOrdemServicoUseCase;
 import br.com.oficina.ordemservico.usecases.ItemPecaInput;
 import br.com.oficina.ordemservico.usecases.ListarOrdensServicoUseCase;
 import br.com.oficina.ordemservico.usecases.MonitorarTempoMedioUseCase;
-import br.com.oficina.ordemservico.usecases.RecusarOrcamentoUseCase;
 import br.com.oficina.ordemservico.usecases.RemoverPecaUseCase;
 import br.com.oficina.ordemservico.usecases.RemoverServicoUseCase;
 import br.com.oficina.shared.domain.ApiError;
@@ -52,8 +50,6 @@ public class OrdemServicoController {
     private final AdicionarPecaUseCase adicionarPeca;
     private final RemoverPecaUseCase removerPeca;
     private final AvancarStatusUseCase avancarStatus;
-    private final AprovarOrcamentoUseCase aprovarOrcamento;
-    private final RecusarOrcamentoUseCase recusarOrcamento;
     private final BuscarOrdemServicoUseCase buscarOrdemServico;
     private final ListarOrdensServicoUseCase listarOrdensServico;
     private final MonitorarTempoMedioUseCase monitorarTempoMedio;
@@ -68,8 +64,6 @@ public class OrdemServicoController {
                                   AdicionarPecaUseCase adicionarPeca,
                                   RemoverPecaUseCase removerPeca,
                                   AvancarStatusUseCase avancarStatus,
-                                  AprovarOrcamentoUseCase aprovarOrcamento,
-                                  RecusarOrcamentoUseCase recusarOrcamento,
                                   BuscarOrdemServicoUseCase buscarOrdemServico,
                                   ListarOrdensServicoUseCase listarOrdensServico,
                                   MonitorarTempoMedioUseCase monitorarTempoMedio,
@@ -83,8 +77,6 @@ public class OrdemServicoController {
         this.adicionarPeca = adicionarPeca;
         this.removerPeca = removerPeca;
         this.avancarStatus = avancarStatus;
-        this.aprovarOrcamento = aprovarOrcamento;
-        this.recusarOrcamento = recusarOrcamento;
         this.buscarOrdemServico = buscarOrdemServico;
         this.listarOrdensServico = listarOrdensServico;
         this.monitorarTempoMedio = monitorarTempoMedio;
@@ -266,12 +258,12 @@ public class OrdemServicoController {
 
     @Operation(summary = "Avançar status da OS",
             description = """
-                    Transições permitidas:
+                    Transições manuais permitidas:
                     - RECEBIDA → EM_DIAGNOSTICO
-                    - EM_DIAGNOSTICO → AGUARDANDO_APROVACAO
-                    - AGUARDANDO_APROVACAO → EM_EXECUCAO ou CANCELADA
-                    - EM_EXECUCAO → FINALIZADA
                     - FINALIZADA → ENTREGUE
+
+                    As demais transições (orçamento, aprovação, pagamento, execução e cancelamento)
+                    pertencem à saga e retornam 409 neste endpoint.
                     """)
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Status avançado",
@@ -287,42 +279,6 @@ public class OrdemServicoController {
     public ResponseEntity<OrdemServicoResponse> avancarStatus(@PathVariable UUID id,
                                                                @Valid @RequestBody AvancarStatusRequest request) {
         return ResponseEntity.ok(presenter.present(avancarStatus.execute(id, request.novoStatus())));
-    }
-
-    @Operation(summary = "Aprovar orçamento",
-            description = "Aprova o orçamento da OS. Requer status AGUARDANDO_APROVACAO → muda para EM_EXECUCAO")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Orçamento aprovado",
-                    content = @Content(schema = @Schema(implementation = OrdemServicoResponse.class))),
-            @ApiResponse(responseCode = "401", description = "Não autenticado",
-                    content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "404", description = "OS não encontrada",
-                    content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "409", description = "OS não está aguardando aprovação",
-                    content = @Content(schema = @Schema(implementation = ApiError.class)))
-    })
-    @PostMapping("/ordens-servico/{id}/aprovar-orcamento")
-    public ResponseEntity<OrdemServicoResponse> aprovarOrcamento(@PathVariable UUID id) {
-        acesso.exigirAcesso(buscarOrdemServico.execute(id).getClienteId());
-        return ResponseEntity.ok(presenter.present(aprovarOrcamento.execute(id)));
-    }
-
-    @Operation(summary = "Recusar orçamento",
-            description = "Recusa o orçamento da OS. Requer status AGUARDANDO_APROVACAO → muda para CANCELADA")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Orçamento recusado, OS cancelada",
-                    content = @Content(schema = @Schema(implementation = OrdemServicoResponse.class))),
-            @ApiResponse(responseCode = "401", description = "Não autenticado",
-                    content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "404", description = "OS não encontrada",
-                    content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "409", description = "OS não está aguardando aprovação",
-                    content = @Content(schema = @Schema(implementation = ApiError.class)))
-    })
-    @PostMapping("/ordens-servico/{id}/recusar-orcamento")
-    public ResponseEntity<OrdemServicoResponse> recusarOrcamento(@PathVariable UUID id) {
-        acesso.exigirAcesso(buscarOrdemServico.execute(id).getClienteId());
-        return ResponseEntity.ok(presenter.present(recusarOrcamento.execute(id)));
     }
 
     @Operation(summary = "Tempo médio de execução",

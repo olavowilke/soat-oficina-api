@@ -28,7 +28,9 @@ public class NotificadorStatusOrdem {
 
     /** Transições cuja mudança de status é relevante comunicar ao cliente. */
     private static final Set<StatusOS> STATUS_NOTIFICAVEIS = EnumSet.of(
+            StatusOS.AGUARDANDO_ORCAMENTO,
             StatusOS.AGUARDANDO_APROVACAO,
+            StatusOS.AGUARDANDO_PAGAMENTO,
             StatusOS.EM_EXECUCAO,
             StatusOS.FINALIZADA,
             StatusOS.ENTREGUE,
@@ -44,6 +46,11 @@ public class NotificadorStatusOrdem {
     }
 
     public void notificar(OrdemServico ordemServico) {
+        notificar(ordemServico, null);
+    }
+
+    /** {@code linkPagamento} é opcional: vai ao cliente quando a OS espera o pagamento. */
+    public void notificar(OrdemServico ordemServico, String linkPagamento) {
         if (ordemServico == null || !STATUS_NOTIFICAVEIS.contains(ordemServico.getStatus())) {
             return;
         }
@@ -58,7 +65,8 @@ public class NotificadorStatusOrdem {
                     ordemServico.getId(),
                     ordemServico.getStatus(),
                     cliente.get().getEmail(),
-                    cliente.get().getNome()));
+                    cliente.get().getNome(),
+                    linkPagamento));
         } catch (RuntimeException ex) {
             log.error("Falha ao notificar mudança de status da OS {} (status {}): {}",
                     ordemServico.getId(), ordemServico.getStatus(), ex.getMessage(), ex);

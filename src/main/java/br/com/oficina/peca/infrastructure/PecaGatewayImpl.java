@@ -2,7 +2,9 @@ package br.com.oficina.peca.infrastructure;
 
 import br.com.oficina.peca.entities.Peca;
 import br.com.oficina.peca.gateways.PecaGateway;
+import br.com.oficina.shared.domain.RecursoNaoEncontradoException;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -41,6 +43,14 @@ public class PecaGatewayImpl implements PecaGateway {
         PecaData data = PecaMapper.toData(peca);
         PecaData saved = jpaRepository.save(data);
         return PecaMapper.toDomain(saved);
+    }
+
+    @Override
+    @Transactional
+    public void devolverAoEstoque(UUID id, int quantidade) {
+        if (jpaRepository.somarEstoque(id, quantidade) == 0) {
+            throw new RecursoNaoEncontradoException("Peça", id);
+        }
     }
 
     @Override

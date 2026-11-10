@@ -3,6 +3,7 @@ package br.com.oficina.ordemservico.entities;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
@@ -93,42 +94,107 @@ class OrdemServicoTest {
                 .hasMessageContaining("Transição inválida");
     }
 
-    @Test
-    void deveRegistrarInicioExecucaoAoAprovarOrcamento() {
+    private OrdemServico osAguardandoExecucao() {
         OrdemServico os = novaOS();
         os.avancarStatus(StatusOS.EM_DIAGNOSTICO);
-        os.avancarStatus(StatusOS.AGUARDANDO_APROVACAO);
-        os.aprovarOrcamento();
+        os.adicionarServico(ItemServico.novo(UUID.randomUUID(), "Troca de óleo", new BigDecimal("150.00")));
+        os.enviarParaOrcamento();
+        os.registrarOrcamentoGerado();
+        os.registrarAprovacao();
+        os.registrarPagamentoConfirmado();
+        return os;
+    }
+
+    private OrdemServico osEmDiagnosticoComItem() {
+        OrdemServico os = novaOS();
+        os.avancarStatus(StatusOS.EM_DIAGNOSTICO);
+        os.adicionarServico(ItemServico.novo(UUID.randomUUID(), "Troca de óleo", new BigDecimal("150.00")));
+        return os;
+    }
+
+    @Test
+    void deveSeguirFluxoFelizDaSaga() {
+        OrdemServico os = osAguardandoExecucao();
+        assertThat(os.getStatus()).isEqualTo(StatusOS.AGUARDANDO_EXECUCAO);
+
+        LocalDateTime inicio = LocalDateTime.of(2026, 1, 1, 10, 0);
+        LocalDateTime fim = LocalDateTime.of(2026, 1, 1, 12, 0);
+        os.iniciarExecucao(inicio);
         assertThat(os.getStatus()).isEqualTo(StatusOS.EM_EXECUCAO);
-        assertThat(os.getInicioExecucao()).isNotNull();
+        assertThat(os.getInicioExecucao()).isEqualTo(inicio);
+
+        os.finalizarExecucao(fim);
+        assertThat(os.getStatus()).isEqualTo(StatusOS.FINALIZADA);
+        assertThat(os.getFimExecucao()).isEqualTo(fim);
     }
 
     @Test
-    void deveRegistrarFimExecucaoAoFinalizar() {
+    void enviarParaOrcamentoSemItensFalha() {
         OrdemServico os = novaOS();
         os.avancarStatus(StatusOS.EM_DIAGNOSTICO);
-        os.avancarStatus(StatusOS.AGUARDANDO_APROVACAO);
-        os.aprovarOrcamento();
-        os.avancarStatus(StatusOS.FINALIZADA);
-        assertThat(os.getFimExecucao()).isNotNull();
+        assertThatThrownBy(os::enviarParaOrcamento)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("item");
+        assertThat(os.getStatus()).isEqualTo(StatusOS.EM_DIAGNOSTICO);
     }
 
     @Test
-    void deveRecusarOrcamentoComCancelamento() {
+    void enviarParaOrcamentoComSomentePecaFunciona() {
         OrdemServico os = novaOS();
         os.avancarStatus(StatusOS.EM_DIAGNOSTICO);
-        os.avancarStatus(StatusOS.AGUARDANDO_APROVACAO);
-        os.recusarOrcamento();
+        os.adicionarPeca(ItemPeca.novo(UUID.randomUUID(), "Filtro", 1, new BigDecimal("45.00")));
+        os.enviarParaOrcamento();
+        assertThat(os.getStatus()).isEqualTo(StatusOS.AGUARDANDO_ORCAMENTO);
+    }
+
+    @Test
+    void adicionarPecaDepoisDeEnviarOrcamentoFalha() {
+        OrdemServico os = osEmDiagnosticoComItem();
+        os.enviarParaOrcamento();
+
+        ItemPeca peca = ItemPeca.novo(UUID.randomUUID(), "Filtro", 1, new BigDecimal("45.00"));
+        assertThatThrownBy(() -> os.adicionarPeca(peca)).isInstanceOf(IllegalStateException.class);
+        ItemServico servico = ItemServico.novo(UUID.randomUUID(), "Extra", new BigDecimal("10.00"));
+        assertThatThrownBy(() -> os.adicionarServico(servico)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> os.removerPeca(UUID.randomUUID())).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> os.removerServico(UUID.randomUUID())).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void deveVoltarParaDiagnosticoQuandoOrcamentoFalha() {
+        OrdemServico os = osEmDiagnosticoComItem();
+        os.enviarParaOrcamento();
+        os.voltarParaDiagnostico();
+        assertThat(os.getStatus()).isEqualTo(StatusOS.EM_DIAGNOSTICO);
+    }
+
+    @Test
+    void deveCancelarEmAguardandoAprovacao() {
+        OrdemServico os = osEmDiagnosticoComItem();
+        os.enviarParaOrcamento();
+        os.registrarOrcamentoGerado();
+        os.cancelar();
         assertThat(os.getStatus()).isEqualTo(StatusOS.CANCELADA);
     }
 
     @Test
-    void deveImpedirEdicaoDeOsEntregue() {
+    void naoPodeCancelarEmExecucao() {
+        OrdemServico os = osAguardandoExecucao();
+        os.iniciarExecucao(LocalDateTime.now());
+        assertThatThrownBy(os::cancelar).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void naoPodeRegistrarPagamentoSemAprovacao() {
         OrdemServico os = novaOS();
-        os.avancarStatus(StatusOS.EM_DIAGNOSTICO);
-        os.avancarStatus(StatusOS.AGUARDANDO_APROVACAO);
-        os.aprovarOrcamento();
-        os.avancarStatus(StatusOS.FINALIZADA);
+        assertThatThrownBy(os::registrarPagamentoConfirmado).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void deveImpedirEdicaoDeOsEntregue() {
+        OrdemServico os = osAguardandoExecucao();
+        os.iniciarExecucao(LocalDateTime.now());
+        os.finalizarExecucao(LocalDateTime.now());
         os.avancarStatus(StatusOS.ENTREGUE);
 
         ItemServico item = ItemServico.novo(UUID.randomUUID(), "Extra", new BigDecimal("100.00"));

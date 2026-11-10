@@ -4,19 +4,37 @@ import java.util.Set;
 
 public enum StatusOS {
 
-    RECEBIDA(4) {
+    RECEBIDA(7) {
         @Override
         public Set<StatusOS> transicoesPermitidas() {
             return Set.of(EM_DIAGNOSTICO);
         }
     },
-    EM_DIAGNOSTICO(3) {
+    EM_DIAGNOSTICO(6) {
         @Override
         public Set<StatusOS> transicoesPermitidas() {
-            return Set.of(AGUARDANDO_APROVACAO);
+            return Set.of(AGUARDANDO_ORCAMENTO);
         }
     },
-    AGUARDANDO_APROVACAO(2) {
+    AGUARDANDO_ORCAMENTO(5) {
+        @Override
+        public Set<StatusOS> transicoesPermitidas() {
+            return Set.of(AGUARDANDO_APROVACAO, EM_DIAGNOSTICO);
+        }
+    },
+    AGUARDANDO_APROVACAO(4) {
+        @Override
+        public Set<StatusOS> transicoesPermitidas() {
+            return Set.of(AGUARDANDO_PAGAMENTO, CANCELADA);
+        }
+    },
+    AGUARDANDO_PAGAMENTO(3) {
+        @Override
+        public Set<StatusOS> transicoesPermitidas() {
+            return Set.of(AGUARDANDO_EXECUCAO, CANCELADA);
+        }
+    },
+    AGUARDANDO_EXECUCAO(2) {
         @Override
         public Set<StatusOS> transicoesPermitidas() {
             return Set.of(EM_EXECUCAO, CANCELADA);
@@ -50,7 +68,8 @@ public enum StatusOS {
 
     /**
      * Ordem de exibição na fila de trabalho (menor = maior prioridade):
-     * EM_EXECUCAO &gt; AGUARDANDO_APROVACAO &gt; EM_DIAGNOSTICO &gt; RECEBIDA.
+     * EM_EXECUCAO, AGUARDANDO_EXECUCAO, AGUARDANDO_PAGAMENTO, AGUARDANDO_APROVACAO,
+     * AGUARDANDO_ORCAMENTO, EM_DIAGNOSTICO, RECEBIDA.
      */
     private final int prioridadeListagem;
 
@@ -62,6 +81,15 @@ public enum StatusOS {
 
     public boolean podeTransicionarPara(StatusOS destino) {
         return transicoesPermitidas().contains(destino);
+    }
+
+    /**
+     * Só duas transições são manuais (pelo PATCH de status). As demais
+     * pertencem à saga e chegam por mensagens dos outros serviços.
+     */
+    public boolean transicaoManualPermitida(StatusOS destino) {
+        return (this == RECEBIDA && destino == EM_DIAGNOSTICO)
+                || (this == FINALIZADA && destino == ENTREGUE);
     }
 
     public int prioridadeListagem() {

@@ -157,7 +157,7 @@ para as pipelines de CD funcionarem:
 | `NEW_RELIC_ACCOUNT_ID` | Variable | `infra-k8s` (`cd.yml`, Terraform) | Conta New Relic onde dashboard/alertas são criados |
 | `UPTIME_CHECK_URL` | Variable | `infra-k8s` (`cd.yml`, Terraform) | URL pública checada pelo monitor sintético (preenchida só depois do primeiro apply de `lambda-auth`, que publica o endpoint do API Gateway) |
 | `AWS_REGION` | Variable | todos os `cd.yml` | Região AWS alvo (default `us-east-1` se ausente) |
-| `WEBHOOK_ORCAMENTO_TOKEN`, `MAIL_USERNAME`, `MAIL_PASSWORD` | Secrets | `infra-k8s` (`cd.yml`, monta o Secret `oficina-secrets`) | Credenciais do webhook de orçamento e do SMTP de notificação — não são publicadas por nenhuma stack Terraform, vêm direto de secrets do GitHub |
+| `MAIL_USERNAME`, `MAIL_PASSWORD` | Secrets | `infra-k8s` (`cd.yml`, monta o Secret `oficina-secrets`) | Credenciais do SMTP de notificação — não são publicadas por nenhuma stack Terraform, vêm direto de secrets do GitHub |
 
 Os New Relic (`NEW_RELIC_ACCOUNT_ID`/`NEW_RELIC_API_KEY`/`UPTIME_CHECK_URL`)
 e o synthetic monitor são opcionais por design: as variáveis correspondentes
