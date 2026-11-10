@@ -1,5 +1,7 @@
 # Diagrama de componentes
 
+> **Fase 3 (histórico).** Este diagrama mostra a Fase 3, com um só serviço. O desenho da Fase 4 está em [`fase4-arquitetura.png`](fase4-arquitetura.png).
+
 Visão de nuvem do sistema — como uma requisição entra pela internet, passa pela
 autenticação serverless e chega ao cluster Kubernetes e ao banco gerenciado.
 Reflete o que está provisionado em Terraform nos três stacks (`infra-k8s`,

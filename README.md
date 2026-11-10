@@ -1,8 +1,8 @@
 # oficina-api
 
-Quarto dos quatro repositórios da Fase 3 do Tech Challenge FIAP PosTech
-(SOAT). Sistema Integrado de Atendimento e Execução de Serviços para
-oficina mecânica: cadastro de clientes/veículos/serviços/peças, abertura e
+OS Service do Tech Challenge FIAP PosTech (SOAT), Fases 3 e 4. Na Fase 4 ele
+é um de três microsserviços (ver a seção "Fase 4" abaixo). Faz parte do Sistema
+Integrado de Atendimento e Execução de Serviços para oficina mecânica: cadastro de clientes/veículos/serviços/peças, abertura e
 acompanhamento de Ordens de Serviço e notificação por e-mail — em **Clean Architecture**, publicado como imagem
 Docker e implantado no cluster **EKS** provisionado por `infra-k8s`.
 
@@ -12,9 +12,114 @@ Este repositório contém a aplicação de negócio propriamente dita: a API
 REST que o cliente final acessa (via o API Gateway de `lambda-auth`) para
 consultar o andamento da sua OS, e que a oficina usa para conduzir todo o
 fluxo de atendimento — do cadastro do cliente à entrega do veículo. É o
-único dos quatro repositórios que não é só infraestrutura. Sua pipeline
+repositório de negócio da Fase 3 e, na Fase 4, o orquestrador da Saga. Sua pipeline
 roda o Terraform da fila da saga e da role do pod, publica a imagem no ECR e
 aplica os manifestos de `k8s/` no cluster.
+
+## Fase 4 — Microsserviços e Saga
+
+Na Fase 4 este repositório virou o **OS Service**. Ele é dono da OS e orquestra a Saga.
+O orçamento e o pagamento foram para o Billing Service. A fila de reparo foi para o Execution Service.
+
+![Arquitetura da Fase 4: serviços, bancos, filas e gateway](docs/arquitetura/fase4-arquitetura.png)
+
+### Serviços
+
+| Serviço | Repositório | Responsabilidade | Banco | Fila de entrada |
+|---|---|---|---|---|
+| OS Service | [`soat-oficina-api`](https://github.com/olavowilke/soat-oficina-api) (este) | OS, clientes, veículos, catálogo, estoque, orquestrador da Saga e e-mails | RDS Postgres `oficina-homolog` | `oficina-homolog-os-saga-replies` |
+| Billing Service | [`soat-billing-service`](https://github.com/olavowilke/soat-billing-service) | Orçamento, pagamento, estorno e Mercado Pago | RDS Postgres `oficina-homolog-billing` | `oficina-homolog-billing-commands` |
+| Execution Service | [`soat-execution-service`](https://github.com/olavowilke/soat-execution-service) | Fila de execução, etapas do reparo e histórico | DynamoDB `oficina-homolog-execucoes` | `oficina-homolog-execution-commands` |
+
+Cada serviço tem repositório, banco, pipeline e deploy próprios. Nenhum serviço lê o banco de outro.
+O cluster, a rede e o New Relic ficam em [`soat-infra-k8s`](https://github.com/olavowilke/soat-infra-k8s).
+
+### Por que Saga orquestrada
+
+Escolhemos a Saga **orquestrada**. O OS Service envia os comandos e lê as respostas.
+O estado da Saga fica na tabela `saga_ordem_servico`.
+
+- Um só lugar mostra o fluxo inteiro. Achar onde uma OS parou é simples.
+- O OS Service já é dono da máquina de estados da OS.
+- Na coreografia, a lógica se espalharia por três repositórios.
+- Cada compensação fica num só `switch` e tem teste.
+
+A decisão completa está na [ADR 0006](docs/adr/0006-microsservicos-e-saga-orquestrada.md).
+O broker e a entrega confiável estão na [ADR 0007](docs/adr/0007-mensageria-sqs.md).
+O banco do Execution está na [ADR 0008](docs/adr/0008-dynamodb-na-execucao.md).
+
+### Fluxo e estados
+
+O mecânico chama `POST /api/ordens-servico/{id}/enviar-orcamento` e a Saga começa.
+O pagamento acontece antes da execução.
+
+| Passo | Gatilho | Mensagem | Estado da Saga | Status da OS |
+|---|---|---|---|---|
+| 1 | Mecânico envia a OS para orçamento | `GerarOrcamento` (OS → Billing) | `AGUARDANDO_ORCAMENTO` | `AGUARDANDO_ORCAMENTO` |
+| 2 | Billing cria o orçamento | `OrcamentoGerado` | `AGUARDANDO_APROVACAO` | `AGUARDANDO_APROVACAO` |
+| 3 | Cliente aprova no Billing | `OrcamentoAprovado` (com o link de pagamento) | `AGUARDANDO_PAGAMENTO` | `AGUARDANDO_PAGAMENTO` |
+| 4 | Mercado Pago confirma o pagamento | `PagamentoConfirmado`, depois `IniciarExecucao` (OS → Execution) | `AGUARDANDO_EXECUCAO` | `AGUARDANDO_EXECUCAO` |
+| 5 | Execution aceita o serviço | `ExecucaoAceita` | `EM_EXECUCAO` | `EM_EXECUCAO` |
+| 6 | Mecânico leva a execução até `CONCLUIDA` | `ExecucaoFinalizada` | `CONCLUIDA` | `FINALIZADA` |
+
+`ENTREGUE` continua uma ação manual. `PATCH /ordens-servico/{id}/status` só aceita
+`RECEBIDA → EM_DIAGNOSTICO` e `FINALIZADA → ENTREGUE`. Qualquer outra transição responde 409.
+Os estados finais da Saga são `CONCLUIDA`, `COMPENSADA` e `FALHOU`. `ESTORNANDO` é um estado intermediário.
+
+### Compensação
+
+| Falha | Mensagem | O que o OS Service faz | Saga | Status da OS |
+|---|---|---|---|---|
+| Billing rejeita o pedido de orçamento (sem itens ou total zero) | `OrcamentoFalhou` | Volta a OS para o diagnóstico | `FALHOU` | `EM_DIAGNOSTICO` |
+| Cliente recusa o orçamento | `OrcamentoRecusado` | Devolve as peças ao estoque e cancela | `COMPENSADA` | `CANCELADA` |
+| Pagamento rejeitado ou expirado | `PagamentoFalhou` | Devolve as peças ao estoque e cancela | `COMPENSADA` | `CANCELADA` |
+| Execution rejeita (`SIMULACAO` ou `CAPACIDADE`) | `ExecucaoRejeitada` | Pede o estorno (`EstornarPagamento`) e espera a resposta | `ESTORNANDO` | `AGUARDANDO_EXECUCAO` |
+| Estorno feito | `PagamentoEstornado` | Devolve as peças ao estoque e cancela | `COMPENSADA` | `CANCELADA` |
+| Estorno falha depois de 3 entregas | `EstornoFalhou` | Registra o erro. Um ADMIN age (ver Operação) | `FALHOU` | `AGUARDANDO_EXECUCAO` |
+
+Cada compensação é idempotente e fica gravada no estado da Saga.
+Uma resposta atrasada ou repetida só gera um log WARN. Uma resposta adiantada volta à fila.
+
+### Mensageria
+
+- Os comandos e as respostas viajam por filas SQS, com uma DLQ por fila (`maxReceiveCount = 3`).
+- O OS Service grava as mensagens na tabela `outbox` e um job as envia a cada segundo.
+- O `correlationId` e o cabeçalho `newrelic` vão nos atributos da mensagem. O trace aparece inteiro no New Relic.
+- Os contratos de cada mensagem estão no README de cada serviço.
+
+### Como rodar a demo
+
+O script [`scripts/demo-saga.sh`](scripts/demo-saga.sh) roda a Saga ponta a ponta no homolog.
+Ele vive na branch `feat/fase4-demo-saga` e chega em `main` por PR.
+
+```bash
+export ADMIN_USERNAME=... ADMIN_PASSWORD=...   # admin do oficina-api
+scripts/demo-saga.sh feliz            # OS até FINALIZADA, Saga CONCLUIDA
+scripts/demo-saga.sh recusa           # cliente recusa: OS CANCELADA, Saga COMPENSADA
+scripts/demo-saga.sh falha-execucao   # Execution rejeita: estorno, OS CANCELADA
+scripts/demo-saga.sh expira           # pagamento vence: OS CANCELADA
+```
+
+- O script precisa de `curl`, `jq`, `kubectl` e `aws`, com acesso ao cluster de homolog.
+- Ele abre `kubectl port-forward` para as rotas de staff e chama o API Gateway com o token do CPF do cliente.
+- `DRY_RUN=1` só imprime as chamadas. `API` troca a URL do gateway.
+- O modo `falha-execucao` liga `PUT /api/execucao/admin/simulacao-falha`. O Execution rejeita o próximo serviço e desliga a flag.
+- O roteiro do vídeo está em [`docs/operacao/roteiro-video-fase4.md`](docs/operacao/roteiro-video-fase4.md).
+
+### Observabilidade da Saga
+
+- Todos os serviços emitem logs JSON com `correlationId`, `sagaId` e `service`.
+- O OS Service expõe `oficina_saga_ativas{estado}` e `oficina_saga_finalizadas_total{resultado}`.
+- Cada serviço expõe `oficina_fila_dlq_mensagens{fila}`.
+- O dashboard `dashboard-saga.json` e os alertas "mensagens em DLQ" e "Saga terminou em FALHOU" ficam em [`soat-infra-k8s`](https://github.com/olavowilke/soat-infra-k8s).
+
+### Qualidade e CI
+
+- O CI roda `mvn verify`: testes unitários, integração com Testcontainers (Postgres e LocalStack), ArchUnit e JaCoCo com mínimo de 80% de linhas.
+- O BDD (Cucumber) cobre o fluxo completo, a recusa do orçamento, a execução rejeitada com estorno e o pagamento expirado. O arquivo é [`saga_ordem_servico.feature`](src/test/resources/features/saga_ordem_servico.feature).
+- O job `owasp` roda o `dependency-check` e precisa do secret `NVD_API_KEY`. Sem a chave, o job é pulado.
+- A análise Sonar do OS Service ainda não está no CI. Os dois serviços novos já têm.
+- O deploy fica atrás da variável `DEPLOY_HOMOLOG=true`.
 
 ## Tecnologias
 
@@ -32,6 +137,7 @@ aplica os manifestos de `k8s/` no cluster.
 | Testes | JUnit 5 + Mockito + Testcontainers + ArchUnit |
 | Cobertura | JaCoCo (mínimo 80% de linhas no bundle) |
 | Container | Docker (multi-stage, usuário não-root, healthcheck) |
+| Mensageria | Amazon SQS (Spring Cloud AWS 3.3) com outbox transacional |
 | Orquestração | Kubernetes (EKS, via `infra-k8s`) + HPA |
 | CI/CD | GitHub Actions (build, testes, imagem no ECR, rollout no EKS) |
 
@@ -53,7 +159,9 @@ A regra de dependência (sempre para dentro) é validada por um teste
 **ArchUnit** (`br.com.oficina.architecture.ArchitectureTest`). Decisão
 registrada em [`docs/adr/0001-clean-architecture.md`](https://github.com/olavowilke/soat-oficina-api/blob/main/docs/adr/0001-clean-architecture.md).
 
-### Esta aplicação no caminho da requisição (AWS)
+### Esta aplicação no caminho da requisição (AWS) — Fase 3 (histórico)
+
+O desenho abaixo é da Fase 3, com o webhook de orçamento. O desenho atual está na seção "Fase 4".
 
 ![Caminho da requisição até a oficina-api na AWS](https://raw.githubusercontent.com/olavowilke/soat-oficina-api/main/docs/arquitetura/diagramas/caminho-requisicao-aws.png)
 
@@ -143,7 +251,9 @@ Com a aplicação rodando:
 
 - **Swagger UI:** `http://localhost:8080/api/swagger-ui.html`
 - **OpenAPI JSON:** `http://localhost:8080/api/v3/api-docs`
-- **Via API Gateway (produção/homolog):** `https://<api_endpoint>/api/swagger-ui.html`
+- **Via API Gateway (homolog):** `https://<api_endpoint>/api/swagger-ui.html`
+- **Billing Service:** `https://<api_endpoint>/api/billing/swagger-ui/index.html`
+- **Execution Service:** `https://<api_endpoint>/api/execucao/swagger-ui/index.html`
 
 A especificação OpenAPI é a fonte da coleção e pode ser importada direto no
 Postman/Insomnia (*Import → Link*) a partir do OpenAPI JSON acima.
@@ -179,6 +289,8 @@ IAM e Pod Identity da oficina-api). O terceiro é o de ECR (`ecr:GetAuthorizatio
   - `POST /api/ordens-servico/{id}/saga/estorno` pede o estorno de novo (202).
   - `POST /api/ordens-servico/{id}/saga/cancelar-apos-estorno-manual` devolve as peças, cancela a OS e compensa a saga (200). Use depois de estornar fora do sistema.
   - Os dois devolvem 409 se o último estorno da OS não falhou.
+- **Pagamento tardio.** O link do Mercado Pago não expira. Se o cliente paga depois de a Saga cancelar a OS, o Billing estorna sozinho. Ele grava o caso na tabela `estornos_avulsos`.
+- **Estorno tardio falhou.** O Billing audita a falha e o Mercado Pago repete o aviso. Se a falha continuar, um operador estorna no painel do Mercado Pago.
 - **DLQs.** Cada fila tem uma DLQ com o sufixo `-dlq` (`oficina-homolog-os-saga-replies-dlq` e as outras). Uma mensagem vai para lá depois de 3 recebimentos sem sucesso. O alerta de DLQ avisa o operador.
 
 ## Justificativa do banco de dados
@@ -204,7 +316,7 @@ repositório (funcionam a partir de qualquer um dos quatro):
 | [`docs/arquitetura/componentes.md`](https://github.com/olavowilke/soat-oficina-api/blob/main/docs/arquitetura/componentes.md) | Diagrama de componentes dos 4 repositórios na AWS |
 | [`docs/arquitetura/sequencia.md`](https://github.com/olavowilke/soat-oficina-api/blob/main/docs/arquitetura/sequencia.md) | Diagramas de sequência (autenticação por CPF, abertura de OS) |
 | [`docs/arquitetura/cicd.md`](https://github.com/olavowilke/soat-oficina-api/blob/main/docs/arquitetura/cicd.md) | Pipelines, ordem de apply e secrets/variables de todos os repositórios |
-| [`docs/adr/`](https://github.com/olavowilke/soat-oficina-api/tree/main/docs/adr) | Decisões de arquitetura (Clean Architecture, API Gateway síncrono, HPA, 4 repositórios, contrato via SSM) |
+| [`docs/adr/`](https://github.com/olavowilke/soat-oficina-api/tree/main/docs/adr) | Decisões de arquitetura (Clean Architecture, HPA, contrato via SSM e, na Fase 4, microsserviços e Saga, SQS e DynamoDB). As ADRs 0002 e 0004 foram substituídas pela 0006 |
 | [`docs/rfc/`](https://github.com/olavowilke/soat-oficina-api/tree/main/docs/rfc) | RFCs (nuvem, API Gateway, autenticação, banco de dados) |
 | [`design-docs/tech-challenge-2/PLANEJAMENTO-FASE-2.md`](https://github.com/olavowilke/tech-challenge-1/blob/main/design-docs/tech-challenge-2/PLANEJAMENTO-FASE-2.md) | Planejamento da Fase 2 (permanece no monorepo original, não faz parte do split) |
 | [Board Miro — Documentação DDD](https://miro.com/app/board/uXjVOXA0ID4=/) | Event Storming, Context Map, Agregados e Linguagem Ubíqua |
