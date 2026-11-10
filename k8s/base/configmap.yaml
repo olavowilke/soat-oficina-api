@@ -38,5 +38,6 @@ data:
   # Filas da saga (nomes fixos, criadas pelo terraform deste repositorio e
   # pelos servicos de billing e execucao).
   OFICINA_FILAS_RESPOSTAS: "oficina-homolog-os-saga-replies"
+  OFICINA_FILAS_RESPOSTAS_DLQ: "oficina-homolog-os-saga-replies-dlq"
   OFICINA_FILAS_BILLING_COMANDOS: "oficina-homolog-billing-commands"
   OFICINA_FILAS_EXECUCAO_COMANDOS: "oficina-homolog-execution-commands"

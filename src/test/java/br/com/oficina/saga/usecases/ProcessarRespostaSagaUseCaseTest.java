@@ -9,6 +9,7 @@ import br.com.oficina.peca.gateways.PecaGateway;
 import br.com.oficina.saga.entities.EstadoSaga;
 import br.com.oficina.saga.entities.SagaOrdemServico;
 import br.com.oficina.saga.gateways.ComandoSagaGateway;
+import br.com.oficina.saga.gateways.MetricasSagaGateway;
 import br.com.oficina.saga.gateways.SagaGateway;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -51,6 +52,7 @@ class ProcessarRespostaSagaUseCaseTest {
     @Mock private ComandoSagaGateway comandos;
     @Mock private DevolverPecasAoEstoque devolverPecas;
     @Mock private NotificadorStatusOrdem notificador;
+    @Mock private MetricasSagaGateway metricas;
     @Mock private PecaGateway pecaGateway;
 
     private ProcessarRespostaSagaUseCase useCase;
@@ -60,7 +62,7 @@ class ProcessarRespostaSagaUseCaseTest {
     @BeforeEach
     void setUp() {
         useCase = new ProcessarRespostaSagaUseCase(sagaGateway, ordemServicoGateway, comandos, devolverPecas,
-                notificador, Clock.fixed(AGORA, ZoneOffset.UTC));
+                notificador, metricas, Clock.fixed(AGORA, ZoneOffset.UTC));
         logger = (Logger) LoggerFactory.getLogger(ProcessarRespostaSagaUseCase.class);
         logs = new ListAppender<>();
         logs.start();
@@ -415,11 +417,51 @@ class ProcessarRespostaSagaUseCaseTest {
                         ItemPeca.novo(pecaId, "Filtro", 3, new BigDecimal("25.00"))));
         SagaOrdemServico saga = preparar(EstadoSaga.AGUARDANDO_APROVACAO, os);
         useCase = new ProcessarRespostaSagaUseCase(sagaGateway, ordemServicoGateway, comandos,
-                new DevolverPecasAoEstoque(pecaGateway), notificador, Clock.fixed(AGORA, ZoneOffset.UTC));
+                new DevolverPecasAoEstoque(pecaGateway), notificador, metricas, Clock.fixed(AGORA, ZoneOffset.UTC));
 
         useCase.execute(resposta(saga, "OrcamentoRecusado", Map.of("orcamentoId", UUID.randomUUID().toString())));
 
         verify(pecaGateway).devolverAoEstoque(pecaId, 2);
         verify(pecaGateway).devolverAoEstoque(pecaId, 3);
+    }
+
+    @Test
+    void contaSagaConcluidaQuandoAExecucaoTermina() {
+        OrdemServico os = os(StatusOS.EM_EXECUCAO, List.of());
+        SagaOrdemServico saga = preparar(EstadoSaga.EM_EXECUCAO, os);
+
+        useCase.execute(resposta(saga, "ExecucaoFinalizada", Map.of()));
+
+        verify(metricas).sagaFinalizada(EstadoSaga.CONCLUIDA);
+    }
+
+    @Test
+    void contaSagaCompensadaQuandoOEstornoConfirma() {
+        OrdemServico os = os(StatusOS.AGUARDANDO_EXECUCAO, List.of());
+        SagaOrdemServico saga = preparar(EstadoSaga.ESTORNANDO, os);
+
+        useCase.execute(resposta(saga, "PagamentoEstornado", Map.of("pagamentoId", UUID.randomUUID().toString())));
+
+        verify(metricas).sagaFinalizada(EstadoSaga.COMPENSADA);
+    }
+
+    @Test
+    void contaSagaFalhouQuandoOOrcamentoFalha() {
+        OrdemServico os = os(StatusOS.AGUARDANDO_ORCAMENTO, List.of());
+        SagaOrdemServico saga = preparar(EstadoSaga.AGUARDANDO_ORCAMENTO, os);
+
+        useCase.execute(resposta(saga, "OrcamentoFalhou", Map.of("motivo", "Total zero")));
+
+        verify(metricas).sagaFinalizada(EstadoSaga.FALHOU);
+    }
+
+    @Test
+    void naoContaTransicaoParaEstadoAtivo() {
+        OrdemServico os = os(StatusOS.AGUARDANDO_ORCAMENTO, List.of());
+        SagaOrdemServico saga = preparar(EstadoSaga.AGUARDANDO_ORCAMENTO, os);
+
+        useCase.execute(resposta(saga, "OrcamentoGerado", Map.of("orcamentoId", UUID.randomUUID().toString())));
+
+        verifyNoInteractions(metricas);
     }
 }

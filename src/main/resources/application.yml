@@ -120,6 +120,7 @@ app:
 oficina:
   filas:
     respostas: ${OFICINA_FILAS_RESPOSTAS:oficina-homolog-os-saga-replies}
+    respostas-dlq: ${OFICINA_FILAS_RESPOSTAS_DLQ:oficina-homolog-os-saga-replies-dlq}
     billing-comandos: ${OFICINA_FILAS_BILLING_COMANDOS:oficina-homolog-billing-commands}
     execucao-comandos: ${OFICINA_FILAS_EXECUCAO_COMANDOS:oficina-homolog-execution-commands}
   outbox:
