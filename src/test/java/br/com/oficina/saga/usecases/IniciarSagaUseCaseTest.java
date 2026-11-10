@@ -116,16 +116,4 @@ class IniciarSagaUseCaseTest {
         verify(sagaGateway, never()).salvar(any());
         verifyNoInteractions(comandos, notificador);
     }
-
-    @Test
-    void corridaNoIndiceUnicoPropagaSagaJaAtiva() {
-        OrdemServico os = osEmDiagnostico(true);
-        when(ordemServicoGateway.findById(os.getId())).thenReturn(Optional.of(os));
-        when(sagaGateway.buscarAtivaPorOsId(os.getId())).thenReturn(Optional.empty());
-        when(ordemServicoGateway.save(os)).thenReturn(os);
-        when(sagaGateway.salvar(any())).thenThrow(new SagaJaAtivaException(os.getId()));
-
-        assertThatThrownBy(() -> useCase.execute(os.getId())).isInstanceOf(SagaJaAtivaException.class);
-        verifyNoInteractions(comandos, notificador);
-    }
 }

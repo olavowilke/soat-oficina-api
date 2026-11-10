@@ -6,6 +6,7 @@ import br.com.oficina.saga.usecases.IniciarSagaUseCase;
 import br.com.oficina.saga.usecases.ListarSagasDaOsUseCase;
 import br.com.oficina.shared.domain.ApiError;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -58,7 +59,7 @@ public class SagaController {
     @Operation(summary = "Listar sagas da OS", description = "Todas as sagas da OS, da mais nova para a mais antiga")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Sagas da OS",
-                    content = @Content(schema = @Schema(implementation = SagaResponse.class))),
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = SagaResponse.class)))),
             @ApiResponse(responseCode = "401", description = "Não autenticado",
                     content = @Content(schema = @Schema(implementation = ApiError.class))),
             @ApiResponse(responseCode = "403", description = "Sem permissão",

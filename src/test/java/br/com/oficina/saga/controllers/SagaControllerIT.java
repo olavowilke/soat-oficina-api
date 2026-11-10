@@ -27,7 +27,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -93,6 +100,34 @@ class SagaControllerIT extends BaseControllerIT {
 
         assertThat(enviar(osId).getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM saga_ordem_servico", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void doisEnvioSimultaneosGeramUmaSagaEUm409() throws Exception {
+        UUID osId = osEmDiagnostico(true);
+        HttpHeaders headers = authHeaders();
+        CountDownLatch largada = new CountDownLatch(1);
+        Callable<HttpStatus> envio = () -> {
+            largada.await();
+            return HttpStatus.valueOf(restTemplate.exchange("/ordens-servico/" + osId + "/enviar-orcamento",
+                    HttpMethod.POST, new HttpEntity<>(headers), Object.class).getStatusCode().value());
+        };
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            List<Future<HttpStatus>> futuros = new ArrayList<>();
+            futuros.add(pool.submit(envio));
+            futuros.add(pool.submit(envio));
+            largada.countDown();
+            List<HttpStatus> status = new ArrayList<>();
+            for (Future<HttpStatus> f : futuros) status.add(f.get());
+            assertThat(status).containsExactlyInAnyOrder(HttpStatus.ACCEPTED, HttpStatus.CONFLICT);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM saga_ordem_servico WHERE os_id = ?", Integer.class, osId))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox WHERE os_id = ? AND tipo = 'GerarOrcamento'",
+                Integer.class, osId)).isEqualTo(1);
     }
 
     @Test
