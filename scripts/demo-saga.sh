@@ -19,6 +19,9 @@
 # Rotas de ADMIN e dos servicos internos nao passam pelo API Gateway (o
 # authorizer so aceita o JWT da Lambda, emitido por CPF). A equipe fala com os
 # pods por port-forward. O cliente aprova pelo Gateway, com o token do CPF.
+#
+# Cliente da demo inativo: a Lambda responde 403 em POST /auth/token. Ative o
+# cliente (ou troque CLIENTE_CPF) antes de rodar.
 set -euo pipefail
 
 MODO="${1:-}"
@@ -67,8 +70,9 @@ fi
 [[ -n "${ADMIN_PASSWORD:-}" ]] || erro "defina ADMIN_PASSWORD"
 
 if [[ -z "${API:-}" ]]; then
-  API="$(aws ssm get-parameter --name /oficina/homolog/gateway/endpoint \
-    --query Parameter.Value --output text 2>/dev/null)" \
+  API="$(aws ssm get-parameter --region "${AWS_REGION:-us-east-1}" \
+    --name /oficina/homolog/gateway/endpoint \
+    --query Parameter.Value --output text)" \
     || ambiente_incompleto "nao li o SSM /oficina/homolog/gateway/endpoint (aws logado? informe API)"
 fi
 API="${API%/}"
@@ -125,13 +129,19 @@ CANNED='{"id":"<id>","token":"<token>","accessToken":"<token>","ordemServicoId":
 http() {
   local metodo="$1" url="$2" token="${3:-}" corpo="${4:-}"
   if [[ "$DRY_RUN" == 1 ]]; then
-    echo "   [dry-run] $metodo $url${corpo:+ $corpo}" >&2
+    local mostra="$corpo"
+    if [[ "$url" == */auth/login ]]; then mostra='{"username":"***","password":"***"}'; fi
+    echo "   [dry-run] $metodo $url${mostra:+ $mostra}" >&2
     echo "$CANNED"
     return 0
   fi
   local args=(-sS -o "$RESP" -w '%{http_code}' -X "$metodo" -H 'Content-Type: application/json' --max-time 20)
   if [[ -n "$token" ]]; then args+=(-H "Authorization: Bearer $token"); fi
-  if [[ -n "$corpo" ]]; then args+=(-d "$corpo"); fi
+  if [[ -n "$corpo" ]]; then
+    args+=(-d "$corpo")
+  elif [[ "$metodo" == POST ]]; then
+    args+=(-d '')
+  fi
   local codigo
   codigo="$(curl "${args[@]}" "$url")" || { echo "erro: falha de rede em $metodo $url" >&2; return 1; }
   if [[ "$codigo" != 2* ]]; then
@@ -149,7 +159,7 @@ aguardar_status_os() {
   local alvo="$1" limite="${2:-30}" atual="" fim=$((SECONDS + ${2:-30}))
   if [[ "$DRY_RUN" == 1 ]]; then echo "   [dry-run] esperaria OS = $alvo"; return 0; fi
   while :; do
-    atual="$(staff GET "$OFICINA_URL/ordens-servico/$OS_ID" | jq -r '.status')"
+    atual="$(staff GET "$OFICINA_URL/ordens-servico/$OS_ID" | jq -r '.status')" || atual="(erro)"
     if [[ "$atual" == "$alvo" ]]; then echo "   OS: $atual"; return 0; fi
     if ((SECONDS >= fim)); then break; fi
     sleep 1
@@ -164,7 +174,7 @@ aguardar_estado_saga() {
   local alvo="$1" limite="${2:-30}" atual="" visto="" fim=$((SECONDS + ${2:-30}))
   if [[ "$DRY_RUN" == 1 ]]; then echo "   [dry-run] esperaria saga = $alvo"; return 0; fi
   while :; do
-    atual="$(staff GET "$OFICINA_URL/ordens-servico/$OS_ID/saga" | jq -r 'sort_by(.criadoEm) | last | .estado // "?"')"
+    atual="$(staff GET "$OFICINA_URL/ordens-servico/$OS_ID/saga" | jq -r 'sort_by(.criadoEm) | last | .estado // "?"')" || atual="(erro)"
     if [[ "$atual" != "$visto" ]]; then echo "   saga: $atual"; visto="$atual"; fi
     if [[ "$atual" == "$alvo" ]]; then return 0; fi
     if ((SECONDS >= fim)); then break; fi
@@ -220,6 +230,13 @@ passo "login do administrador (direto no pod, fora do Gateway)"
 ADMIN_TOKEN="$(http POST "$OFICINA_URL/auth/login" "" \
   "$(jq -nc --arg u "$ADMIN_USERNAME" --arg p "$ADMIN_PASSWORD" '{username:$u,password:$p}')" | jq -r '.token')"
 [[ -n "$ADMIN_TOKEN" && "$ADMIN_TOKEN" != null ]] || erro "login sem token"
+
+# Melhor esforco: uma flag esquecida de uma demo anterior faria a Execucao rejeitar.
+if [[ "$MODO" != falha-execucao ]]; then
+  echo "-> garantindo a simulacao de falha desligada"
+  http PUT "$EXEC_URL/admin/simulacao-falha" "" '{"ativa":false}' >/dev/null \
+    || echo "AVISO: nao desliguei a simulacao de falha no inicio; siga em frente" >&2
+fi
 
 passo "cliente com CPF $CLIENTE_CPF (cria se nao existir)"
 CLIENTE_ID="$(staff GET "$OFICINA_URL/clientes" | jq -r --arg cpf "$CLIENTE_CPF" '
@@ -283,7 +300,7 @@ else
 
   if [[ "$MODO" == expira ]]; then
     # Prazo vem do Billing (BILLING_PAGAMENTO_PRAZO, padrao da demo PT2M).
-    # O job de expiracao roda a cada BILLING_PAGAMENTO_VERIFICACAO (PT30S).
+    # O job de expiracao roda a cada BILLING_PAGAMENTO_VERIFICACAO (PT15S no homolog).
     ESPERA=210
     if [[ -n "$EXPIRA_EM" ]]; then
       ESPERA="$(jq -nr --arg t "$EXPIRA_EM" '
@@ -328,5 +345,15 @@ if [[ "$DRY_RUN" == 1 ]]; then
 fi
 echo "OS $OS_ID: $(staff GET "$OFICINA_URL/ordens-servico/$OS_ID" | jq -r '.status')"
 echo "Saga:"
-staff GET "$OFICINA_URL/ordens-servico/$OS_ID/saga" | jq '[.[] | {estado, motivoFalha, criadoEm, atualizadoEm}]'
-echo "Estoque da peca: antes da OS = $ESTOQUE_ANTES, agora = $(estoque)"
+SAGAS="$(staff GET "$OFICINA_URL/ordens-servico/$OS_ID/saga")"
+jq '[.[] | {id, estado, motivoFalha, criadoEm, atualizadoEm}]' <<<"$SAGAS"
+echo "sagaId: $(jq -r 'sort_by(.criadoEm) | last | .id // "?"' <<<"$SAGAS")"
+ESTOQUE_DEPOIS="$(estoque)"
+echo "Estoque da peca: antes da OS = $ESTOQUE_ANTES, agora = $ESTOQUE_DEPOIS"
+case "$MODO" in
+  recusa | expira | falha-execucao)
+    if [[ "$ESTOQUE_DEPOIS" != "$ESTOQUE_ANTES" ]]; then
+      erro "o estoque nao voltou: antes = $ESTOQUE_ANTES, agora = $ESTOQUE_DEPOIS"
+    fi
+    ;;
+esac
