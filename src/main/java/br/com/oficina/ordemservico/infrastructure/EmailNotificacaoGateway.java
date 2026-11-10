@@ -69,6 +69,7 @@ public class EmailNotificacaoGateway implements NotificacaoGateway {
 
     private String descricao(StatusOS status) {
         return switch (status) {
+            case AGUARDANDO_ORCAMENTO -> "Aguardando orçamento";
             case AGUARDANDO_APROVACAO -> "Aguardando aprovação do orçamento";
             case EM_EXECUCAO -> "Em execução";
             case FINALIZADA -> "Finalizada";

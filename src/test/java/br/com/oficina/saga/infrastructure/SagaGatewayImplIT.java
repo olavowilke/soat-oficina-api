@@ -8,7 +8,7 @@ import br.com.oficina.saga.gateways.SagaGateway;
 import br.com.oficina.shared.BaseControllerIT;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataIntegrityViolationException;
+import br.com.oficina.saga.entities.SagaJaAtivaException;
 import org.springframework.dao.OptimisticLockingFailureException;
 
 import java.time.Instant;
@@ -69,7 +69,7 @@ class SagaGatewayImplIT extends BaseControllerIT {
         sagaGateway.salvar(SagaOrdemServico.iniciar(osId, Instant.now()));
 
         assertThatThrownBy(() -> sagaGateway.salvar(SagaOrdemServico.iniciar(osId, Instant.now())))
-                .isInstanceOf(DataIntegrityViolationException.class);
+                .isInstanceOf(SagaJaAtivaException.class);
     }
 
     @Test

@@ -58,6 +58,18 @@ class NotificadorStatusOrdemTest {
     }
 
     @Test
+    void deveNotificarAoAguardarOrcamento() {
+        UUID clienteId = UUID.randomUUID();
+        Cliente cliente = Cliente.reconstituir(clienteId, "Maria", "maria@ex.com", "119", null,
+                true, null, null);
+        when(clienteGateway.findById(clienteId)).thenReturn(Optional.of(cliente));
+
+        notificador.notificar(osComStatus(StatusOS.AGUARDANDO_ORCAMENTO, clienteId));
+
+        verify(notificacaoGateway).notificarAtualizacaoStatus(any());
+    }
+
+    @Test
     void naoDeveNotificarEmStatusNaoRelevante() {
         OrdemServico os = osComStatus(StatusOS.RECEBIDA, UUID.randomUUID());
 

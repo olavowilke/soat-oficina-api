@@ -28,6 +28,7 @@ public class NotificadorStatusOrdem {
 
     /** Transições cuja mudança de status é relevante comunicar ao cliente. */
     private static final Set<StatusOS> STATUS_NOTIFICAVEIS = EnumSet.of(
+            StatusOS.AGUARDANDO_ORCAMENTO,
             StatusOS.AGUARDANDO_APROVACAO,
             StatusOS.EM_EXECUCAO,
             StatusOS.FINALIZADA,

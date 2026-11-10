@@ -1,5 +1,6 @@
 package br.com.oficina.shared.infrastructure;
 
+import br.com.oficina.saga.entities.SagaJaAtivaException;
 import br.com.oficina.shared.domain.ApiError;
 import br.com.oficina.shared.domain.RecursoNaoEncontradoException;
 import jakarta.persistence.EntityNotFoundException;
@@ -66,6 +67,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiError.of(400, "Bad Request", ex.getMessage()));
+    }
+
+    @ExceptionHandler(SagaJaAtivaException.class)
+    public ResponseEntity<ApiError> handleSagaJaAtiva(SagaJaAtivaException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(409, "Conflict", ex.getMessage()));
     }
 
     @ExceptionHandler(IllegalStateException.class)

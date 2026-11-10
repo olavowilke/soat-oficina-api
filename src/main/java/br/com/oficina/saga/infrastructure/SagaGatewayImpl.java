@@ -1,8 +1,10 @@
 package br.com.oficina.saga.infrastructure;
 
 import br.com.oficina.saga.entities.EstadoSaga;
+import br.com.oficina.saga.entities.SagaJaAtivaException;
 import br.com.oficina.saga.entities.SagaOrdemServico;
 import br.com.oficina.saga.gateways.SagaGateway;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Repository;
 
 import java.util.Arrays;
@@ -28,7 +30,12 @@ public class SagaGatewayImpl implements SagaGateway {
      */
     @Override
     public SagaOrdemServico salvar(SagaOrdemServico saga) {
-        return paraDominio(repository.saveAndFlush(paraData(saga)));
+        try {
+            return paraDominio(repository.saveAndFlush(paraData(saga)));
+        } catch (DataIntegrityViolationException e) {
+            if (violaIndiceDeSagaAtiva(e)) throw new SagaJaAtivaException(saga.getOsId());
+            throw e;
+        }
     }
 
     @Override
@@ -44,6 +51,13 @@ public class SagaGatewayImpl implements SagaGateway {
     @Override
     public List<SagaOrdemServico> buscarPorOsId(UUID osId) {
         return repository.findByOsIdOrderByCriadoEmAsc(osId).stream().map(this::paraDominio).toList();
+    }
+
+    private static boolean violaIndiceDeSagaAtiva(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t.getMessage() != null && t.getMessage().contains("ux_saga_os_ativa")) return true;
+        }
+        return false;
     }
 
     private SagaData paraData(SagaOrdemServico s) {
