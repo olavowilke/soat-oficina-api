@@ -12,10 +12,9 @@ Este repositório contém a aplicação de negócio propriamente dita: a API
 REST que o cliente final acessa (via o API Gateway de `lambda-auth`) para
 consultar o andamento da sua OS, e que a oficina usa para conduzir todo o
 fluxo de atendimento — do cadastro do cliente à entrega do veículo. É o
-único dos quatro repositórios que não é infraestrutura: sua pipeline não
-roda Terraform nem conhece manifestos Kubernetes — apenas publica a imagem
-no ECR e troca a tag no `Deployment` já existente, aplicado por
-`infra-k8s`, via `kubectl set image`.
+único dos quatro repositórios que não é só infraestrutura. Sua pipeline
+roda o Terraform da fila da saga e da role do pod, publica a imagem no ECR e
+aplica os manifestos de `k8s/` no cluster.
 
 ## Tecnologias
 
@@ -142,22 +141,28 @@ Postman/Insomnia (*Import → Link*) a partir do OpenAPI JSON acima.
 
 ## Secrets e variables da pipeline
 
-Este repositório **não define secrets próprios de infraestrutura** — sua
-pipeline de deploy assume a mesma role usada por `infra-k8s` e lê os demais
-dados (URL do ECR, nome do cluster) via SSM, publicados por aquele
-repositório. Ainda assim, os workflows (`ci.yml`, `cd.yml`) exigem:
+O `cd.yml` precisa dos secrets e variables abaixo. O `ci.yml` não precisa de nenhum.
 
 | Nome | Tipo | O que quebra se estiver ausente |
 |---|---|---|
-| `AWS_DEPLOY_ROLE_ARN` | Secret | O passo "Credenciais AWS (OIDC)" falha ao assumir a role — build/push da imagem e o rollout não acontecem |
-| `AWS_REGION` | Variable | Opcional — sem ela, a pipeline usa `us-east-1` como padrão |
-| `ANTHROPIC_API_KEY` | Secret | Só usado pelo workflow `claude-review.yml`; sem ele, a revisão automática de PR não roda (não afeta build/deploy) |
+| `AWS_DEPLOY_ROLE_ARN` | Secret | O passo "Credenciais AWS (OIDC)" falha. Nenhum job de deploy roda |
+| `TF_STATE_BUCKET` | Secret | `terraform init` falha (backend S3 sem bucket) |
+| `TF_LOCK_TABLE` | Secret | `terraform init` falha (backend sem tabela de lock) |
+| `ADMIN_USERNAME` | Secret | O passo do Secret `oficina-secrets` falha. Sem ele a aplicação usaria o padrão público |
+| `ADMIN_PASSWORD` | Secret | Mesmo efeito de `ADMIN_USERNAME` |
+| `MAIL_USERNAME` | Secret | O Secret sobe com valor vazio. O envio real de e-mail falha |
+| `MAIL_PASSWORD` | Secret | Mesmo efeito de `MAIL_USERNAME` |
+| `NEW_RELIC_LICENSE_KEY` | Secret | O Secret sobe com valor vazio. O agente New Relic não liga |
+| `DEPLOY_HOMOLOG` | Variable | Precisa ser `true`. Com outro valor, nenhum job de deploy roda |
+| `AWS_REGION` | Variable | Opcional. Sem ela, a pipeline usa `us-east-1` |
+| `ANTHROPIC_API_KEY` | Secret | Só o workflow `claude-review.yml` usa. Sem ele, a revisão automática de PR não roda |
 
-A role `AWS_DEPLOY_ROLE_ARN` precisa ter, além do já exigido por
-`infra-k8s`, permissão de ECR (`ecr:GetAuthorizationToken`,
-`ecr:BatchCheckLayerAvailability`, `ecr:PutImage`,
-`ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`,
-`ecr:CompleteLayerUpload`) — ver [`infra-k8s/README.md`](https://github.com/olavowilke/soat-infra-k8s/blob/main/README.md#pipelines-githubworkflows).
+A role `AWS_DEPLOY_ROLE_ARN` precisa de três grupos de permissão. O primeiro é
+o que `infra-k8s` já exige. O segundo é o do Terraform deste repositório (SQS,
+IAM e Pod Identity da oficina-api). O terceiro é o de ECR (`ecr:GetAuthorizationToken`,
+`ecr:BatchCheckLayerAvailability`, `ecr:PutImage`, `ecr:InitiateLayerUpload`,
+`ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`). Ver
+[`infra-k8s/README.md`](https://github.com/olavowilke/soat-infra-k8s/blob/main/README.md#pipelines-githubworkflows).
 
 ## Justificativa do banco de dados
 
