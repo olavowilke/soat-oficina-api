@@ -26,6 +26,7 @@
         <dependency-check.version>12.1.0</dependency-check.version>
         <spring-cloud-aws.version>3.3.0</spring-cloud-aws.version>
         <newrelic-api.version>8.16.0</newrelic-api.version>
+        <cucumber.version>7.20.1</cucumber.version>
     </properties>
 
     <dependencyManagement>
@@ -178,6 +179,31 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>localstack</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Cucumber (BDD da saga) -->
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-java</artifactId>
+            <version>${cucumber.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-spring</artifactId>
+            <version>${cucumber.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-junit-platform-engine</artifactId>
+            <version>${cucumber.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
             <scope>test</scope>
         </dependency>
 
