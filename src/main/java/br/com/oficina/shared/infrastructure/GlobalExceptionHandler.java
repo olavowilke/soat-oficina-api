@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -78,6 +79,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleIllegalState(IllegalStateException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiError.of(409, "Conflict", ex.getMessage()));
+    }
+
+    // AccessDeniedException lancada DENTRO de um controller (AcessoOrdemServico,
+    // na checagem de posse da ordem) nao passa pelo accessDeniedHandler da
+    // cadeia de filtros - aquele so ve o que os filtros lancam. Sem este
+    // handler ela cairia no @ExceptionHandler(Exception.class) abaixo e viraria
+    // 500, escondendo uma negativa de acesso legitima atras de um erro de
+    // servidor.
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiError.of(403, "Forbidden", "Acesso negado"));
     }
 
     @ExceptionHandler(Exception.class)

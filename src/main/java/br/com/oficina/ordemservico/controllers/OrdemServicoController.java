@@ -3,6 +3,7 @@ package br.com.oficina.ordemservico.controllers;
 import br.com.oficina.ordemservico.entities.StatusOS;
 import br.com.oficina.ordemservico.presenters.AbrirOrdemServicoResponse;
 import br.com.oficina.ordemservico.presenters.OrdemServicoPresenter;
+import br.com.oficina.shared.infrastructure.AcessoOrdemServico;
 import br.com.oficina.ordemservico.presenters.OrdemServicoResponse;
 import br.com.oficina.ordemservico.presenters.OrdemServicoStatusResponse;
 import br.com.oficina.ordemservico.presenters.StatusOSPresenter;
@@ -57,6 +58,7 @@ public class OrdemServicoController {
     private final ListarOrdensServicoUseCase listarOrdensServico;
     private final MonitorarTempoMedioUseCase monitorarTempoMedio;
     private final OrdemServicoPresenter presenter;
+    private final AcessoOrdemServico acesso;
     private final StatusOSPresenter statusPresenter;
 
     public OrdemServicoController(CriarOrdemServicoUseCase criarOrdemServico,
@@ -72,6 +74,7 @@ public class OrdemServicoController {
                                   ListarOrdensServicoUseCase listarOrdensServico,
                                   MonitorarTempoMedioUseCase monitorarTempoMedio,
                                   OrdemServicoPresenter presenter,
+                                  AcessoOrdemServico acesso,
                                   StatusOSPresenter statusPresenter) {
         this.criarOrdemServico = criarOrdemServico;
         this.abrirOrdemServico = abrirOrdemServico;
@@ -86,6 +89,7 @@ public class OrdemServicoController {
         this.listarOrdensServico = listarOrdensServico;
         this.monitorarTempoMedio = monitorarTempoMedio;
         this.presenter = presenter;
+        this.acesso = acesso;
         this.statusPresenter = statusPresenter;
     }
 
@@ -162,7 +166,9 @@ public class OrdemServicoController {
     })
     @GetMapping("/ordens-servico/{id}")
     public ResponseEntity<OrdemServicoResponse> buscarPorId(@PathVariable UUID id) {
-        return ResponseEntity.ok(presenter.present(buscarOrdemServico.execute(id)));
+        var ordem = buscarOrdemServico.execute(id);
+        acesso.exigirAcesso(ordem.getClienteId());
+        return ResponseEntity.ok(presenter.present(ordem));
     }
 
     @Operation(summary = "Consultar status da OS (público)",
@@ -297,6 +303,7 @@ public class OrdemServicoController {
     })
     @PostMapping("/ordens-servico/{id}/aprovar-orcamento")
     public ResponseEntity<OrdemServicoResponse> aprovarOrcamento(@PathVariable UUID id) {
+        acesso.exigirAcesso(buscarOrdemServico.execute(id).getClienteId());
         return ResponseEntity.ok(presenter.present(aprovarOrcamento.execute(id)));
     }
 
@@ -314,6 +321,7 @@ public class OrdemServicoController {
     })
     @PostMapping("/ordens-servico/{id}/recusar-orcamento")
     public ResponseEntity<OrdemServicoResponse> recusarOrcamento(@PathVariable UUID id) {
+        acesso.exigirAcesso(buscarOrdemServico.execute(id).getClienteId());
         return ResponseEntity.ok(presenter.present(recusarOrcamento.execute(id)));
     }
 
