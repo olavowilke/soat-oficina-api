@@ -5,3 +5,9 @@ spring:
     show-sql: true
   flyway:
     enabled: true
+
+logging:
+  level:
+    # Erros esperados nos testes (violação de unicidade, falha de envio simulada).
+    org.hibernate.engine.jdbc.spi.SqlExceptionHelper: "OFF"
+    br.com.oficina.shared.infrastructure.mensageria.OutboxRelay: "ERROR"

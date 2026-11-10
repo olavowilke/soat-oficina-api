@@ -10,6 +10,7 @@ import br.com.oficina.saga.gateways.SagaGateway;
 import br.com.oficina.shared.BaseControllerIT;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,7 +21,6 @@ import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 import software.amazon.awssdk.services.sqs.model.Message;
 
 import java.math.BigDecimal;
-import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +40,26 @@ class OutboxRelayIT extends BaseControllerIT {
     @Autowired private TransactionTemplate tx;
     @Value("${oficina.filas.billing-comandos}") private String filaBilling;
     @Value("${oficina.filas.execucao-comandos}") private String filaExecucao;
+
+    @BeforeEach
+    void esvaziarFilas() throws Exception {
+        for (String fila : new String[]{filaBilling, filaExecucao}) {
+            String url = sqs.getQueueUrl(r -> r.queueName(fila)).get().queueUrl();
+            sqs.purgeQueue(r -> r.queueUrl(url)).get();
+        }
+    }
+
+    /** Insere uma linha pendente direto no banco; o seq segue a ordem das chamadas. */
+    private UUID linha(UUID sagaId, String destino, String tipo) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("INSERT INTO outbox (id, destino, tipo, saga_id, os_id, correlation_id, payload, criado_em) "
+                + "VALUES (?, ?, ?, ?, ?, 'c', '{}'::jsonb, now())", id, destino, tipo, sagaId, UUID.randomUUID());
+        return id;
+    }
+
+    private boolean enviada(UUID id) {
+        return jdbc.queryForObject("SELECT enviado_em IS NOT NULL FROM outbox WHERE id = ?", Boolean.class, id);
+    }
 
     private OrdemServico osComItens() {
         UUID[] ids = inserirClienteEVeiculo();
@@ -108,7 +128,6 @@ class OutboxRelayIT extends BaseControllerIT {
 
     @Test
     void relayEnviaParaFilaDoDestino() throws Exception {
-        receber(filaBilling, 0);
         OrdemServico os = osComItens();
         SagaOrdemServico saga = sagaGateway.salvar(SagaOrdemServico.iniciar(os.getId(), Instant.now()));
         tx.executeWithoutResult(s -> {
@@ -117,6 +136,9 @@ class OutboxRelayIT extends BaseControllerIT {
             comandos.estornarPagamento(saga, "Pagamento duplicado");
         });
 
+        // Uma linha por saga em cada passada: a seguinte espera a anterior ser enviada.
+        relay.enviarPendentes();
+        relay.enviarPendentes();
         relay.enviarPendentes();
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox WHERE enviado_em IS NULL", Integer.class))
@@ -141,15 +163,112 @@ class OutboxRelayIT extends BaseControllerIT {
     }
 
     @Test
-    void falhaDeEnvioDeixaALinhaPendente() {
-        UUID id = UUID.randomUUID();
-        jdbc.update("INSERT INTO outbox (id, destino, tipo, saga_id, os_id, correlation_id, payload, criado_em) "
-                        + "VALUES (?, 'destino-desconhecido', 'X', ?, ?, 'c', '{}'::jsonb, now())",
-                id, UUID.randomUUID(), UUID.randomUUID());
+    void executarPassaPeloAgendadorMarcaEnviadoEEnviaUmaSoCopia() throws Exception {
+        OrdemServico os = osComItens();
+        SagaOrdemServico saga = sagaGateway.salvar(SagaOrdemServico.iniciar(os.getId(), Instant.now()));
+        tx.executeWithoutResult(s -> comandos.estornarPagamento(saga, "motivo"));
+
+        relay.executar();
+        relay.executar();
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox WHERE enviado_em IS NOT NULL", Integer.class))
+                .isEqualTo(1);
+        assertThat(receber(filaBilling, 1)).hasSize(1);
+        assertThat(receber(filaBilling, 1)).isEmpty();
+    }
+
+    @Test
+    void falhaDeEnvioDeixaALinhaPendenteComEsperaEContaTentativas() {
+        UUID id = linha(UUID.randomUUID(), "destino-desconhecido", "X");
 
         relay.enviarPendentes();
 
-        assertThat(jdbc.queryForObject("SELECT enviado_em FROM outbox WHERE id = ?", Timestamp.class, id)).isNull();
+        var l = jdbc.queryForMap("SELECT enviado_em, tentativas, proxima_tentativa_em FROM outbox WHERE id = ?", id);
+        assertThat(l.get("enviado_em")).isNull();
+        assertThat(l.get("tentativas")).isEqualTo(1);
+        assertThat(l.get("proxima_tentativa_em")).isNotNull();
+
+        relay.enviarPendentes();
+
+        assertThat(jdbc.queryForObject("SELECT tentativas FROM outbox WHERE id = ?", Integer.class, id)).isEqualTo(1);
+    }
+
+    @Test
+    void linhaPosteriorDaMesmaSagaEsperaEOutraSagaSegue() throws Exception {
+        UUID sagaComFalha = UUID.randomUUID();
+        UUID falha = linha(sagaComFalha, "destino-desconhecido", "X");
+        UUID depoisDaFalha = linha(sagaComFalha, "billing-commands", "Y");
+        UUID outraSaga = linha(UUID.randomUUID(), "billing-commands", "Z");
+
+        relay.enviarPendentes();
+
+        assertThat(enviada(falha)).isFalse();
+        assertThat(enviada(depoisDaFalha)).isFalse();
+        assertThat(enviada(outraSaga)).isTrue();
+
+        relay.enviarPendentes();
+
+        assertThat(enviada(depoisDaFalha)).isFalse();
+        assertThat(receber(filaBilling, 1)).hasSize(1);
+    }
+
+    @Test
+    void mesmaSagaEnviaUmaLinhaPorPassadaNaOrdemDeGravacao() throws Exception {
+        UUID saga = UUID.randomUUID();
+        UUID a = linha(saga, "billing-commands", "A");
+        UUID b = linha(saga, "billing-commands", "B");
+
+        relay.enviarPendentes();
+
+        assertThat(enviada(a)).isTrue();
+        assertThat(enviada(b)).isFalse();
+
+        relay.enviarPendentes();
+
+        assertThat(enviada(b)).isTrue();
+    }
+
+    @Test
+    void linhaEmEsperaNaoEhRetentadaAntesDaHora() {
+        UUID id = linha(UUID.randomUUID(), "billing-commands", "X");
+        jdbc.update("UPDATE outbox SET proxima_tentativa_em = now() + interval '1 hour' WHERE id = ?", id);
+
+        relay.enviarPendentes();
+
+        assertThat(enviada(id)).isFalse();
+
+        jdbc.update("UPDATE outbox SET proxima_tentativa_em = now() - interval '1 second' WHERE id = ?", id);
+        relay.enviarPendentes();
+
+        assertThat(enviada(id)).isTrue();
+    }
+
+    @Test
+    void enviaNaOrdemDeGravacaoEAte50PorPassada() throws Exception {
+        for (int i = 0; i < 55; i++) {
+            linha(UUID.randomUUID(), "billing-commands", "T" + i);
+        }
+
+        relay.enviarPendentes();
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox WHERE enviado_em IS NOT NULL", Integer.class))
+                .isEqualTo(50);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM outbox WHERE enviado_em IS NULL AND seq > (SELECT max(seq) FROM outbox WHERE enviado_em IS NOT NULL)",
+                Integer.class)).isEqualTo(5);
+
+        relay.enviarPendentes();
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox WHERE enviado_em IS NULL", Integer.class)).isZero();
+    }
+
+    @Test
+    void esperaCresceAteOLimiteDeCincoMinutos() {
+        assertThat(OutboxRelay.esperaDaTentativa(1).toSeconds()).isEqualTo(2);
+        assertThat(OutboxRelay.esperaDaTentativa(3).toSeconds()).isEqualTo(8);
+        assertThat(OutboxRelay.esperaDaTentativa(8).toSeconds()).isEqualTo(256);
+        assertThat(OutboxRelay.esperaDaTentativa(9).toSeconds()).isEqualTo(300);
+        assertThat(OutboxRelay.esperaDaTentativa(500).toSeconds()).isEqualTo(300);
     }
 
     private String tipo(String corpo) {

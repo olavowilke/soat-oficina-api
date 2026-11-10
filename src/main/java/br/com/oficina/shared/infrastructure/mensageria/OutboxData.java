@@ -48,4 +48,14 @@ public class OutboxData {
 
     @Column(name = "enviado_em")
     private Instant enviadoEm;
+
+    /** Ordem de gravação, gerada pelo banco. */
+    @Column(insertable = false, updatable = false)
+    private Long seq;
+
+    @Column(nullable = false)
+    private int tentativas;
+
+    @Column(name = "proxima_tentativa_em")
+    private Instant proximaTentativaEm;
 }
