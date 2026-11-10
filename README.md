@@ -1,5 +1,8 @@
 # oficina-api
 
+[![Cobertura](https://sonarcloud.io/api/project_badges/measure?project=olavowilke_soat-oficina-api&metric=coverage)](https://sonarcloud.io/project/overview?id=olavowilke_soat-oficina-api)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=olavowilke_soat-oficina-api&metric=alert_status)](https://sonarcloud.io/project/overview?id=olavowilke_soat-oficina-api)
+
 OS Service do Tech Challenge FIAP PosTech (SOAT), Fases 3 e 4.
 Na Fase 4 ele é um de três microsserviços (ver a seção "Fase 4" abaixo).
 
@@ -94,7 +97,6 @@ Uma resposta atrasada ou repetida só gera um log WARN. Uma resposta adiantada v
 ### Como rodar a demo
 
 O script [`scripts/demo-saga.sh`](scripts/demo-saga.sh) roda a Saga ponta a ponta no homolog.
-Ele vive na branch `feat/fase4-demo-saga` e chega em `main` por PR.
 
 ```bash
 export ADMIN_USERNAME=... ADMIN_PASSWORD=...   # admin do oficina-api

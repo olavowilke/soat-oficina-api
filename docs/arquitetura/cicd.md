@@ -22,7 +22,8 @@ Só existe o ambiente `homolog`. Um push em `main` implanta em homolog quando a 
 | `soat-execution-service` | `cd.yml` | `push` em `main` ou `workflow_dispatch` | `terraform apply` (fila, DynamoDB, ECR, rotas do gateway), imagem, `kubectl apply`, `rollout status` e teste de saúde |
 
 > O CI dos três serviços Java tem o passo Sonar e o job `owasp`.
-> O Sonar e o `owasp` só rodam quando existem `SONAR_TOKEN` e `NVD_API_KEY`. Sem a chave, o passo é pulado com um aviso.
+> O passo Sonar só roda com `SONAR_TOKEN`. Sem o token, ele é pulado sem aviso.
+> O job `owasp` precisa de `NVD_API_KEY`. Sem a chave, ele imprime um aviso.
 
 ## Dono dos manifestos Kubernetes
 

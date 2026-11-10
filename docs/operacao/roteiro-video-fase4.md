@@ -20,7 +20,10 @@ Não há folga. No ensaio, use o plano de corte no fim.
 - [ ] Ambiente de homolog no ar: EKS, RDS OS, RDS Billing, DynamoDB e as três filas.
 - [ ] `kubectl get pods -A` mostra os pods de `oficina`, `billing` e `execucao` em `Running`.
 - [ ] `kubectl` aponta para o cluster de homolog. `jq` está instalado.
-- [ ] Mercado Pago em sandbox. Comprador de teste pronto.
+- [ ] Credenciais AWS ativas, para o `kubectl` e para o SSM: rode `aws sso login` (ou `aws configure`).
+- [ ] Variáveis do admin definidas: `export ADMIN_USERNAME=... ADMIN_PASSWORD=...`.
+- [ ] Opcional: `export API=<url do gateway>`. Sem ela, o script lê o SSM.
+- [ ] Billing em modo fake (`BILLING_MERCADOPAGO_MODO=fake`). O modo real usa o sandbox do Mercado Pago e o webhook. Ele precisa de credenciais.
 - [ ] Flag `simulacao-falha` desligada. Envie por port-forward `PUT /api/execucao/admin/simulacao-falha {"ativa":false}`. Não existe `GET` para ela.
 - [ ] `SONAR_TOKEN` e `vars.SONAR_ORGANIZATION` definidos. A organização no SonarCloud existe (passo manual).
 - [ ] `NVD_API_KEY` definido, para o job OWASP.
@@ -49,7 +52,7 @@ Não há folga. No ensaio, use o plano de corte no fim.
 - Escolhemos Saga orquestrada. O OS já é dono da OS e do status.
 - Coreografia espalharia a lógica do fluxo por três repositórios.
 - Todo passo que pode falhar tem compensação.
-- O pagamento acontece na aprovação, antes da execução. Billing fala com o Mercado Pago.
+- O pagamento acontece na aprovação, antes da execução. Billing cobra pelo Mercado Pago. No homolog, usa o adaptador fake.
 - O New Relic recebe métricas, logs e traces dos três serviços.
 
 **Se falhar:** se a imagem não abrir, use o arquivo `docs/arquitetura/fase4-arquitetura.png` direto do repositório. Fale o mesmo texto.
@@ -72,8 +75,8 @@ Ele mostra o status da OS e o estado da saga a cada passo.
 - O script abre port-forward para os três serviços. A equipe interna não passa pelo gateway.
 - Ele cria a OS e envia o orçamento. A saga começa em `AGUARDANDO_ORCAMENTO`.
 - Billing gera o orçamento. A OS vai para `AGUARDANDO_APROVACAO`.
-- O cliente aprova. Billing cria a preferência no Mercado Pago. A OS vai para `AGUARDANDO_PAGAMENTO`.
-- O pagamento sandbox chega pelo webhook. Billing confere o pagamento na API do Mercado Pago.
+- O cliente aprova. Billing cria o pagamento. A OS vai para `AGUARDANDO_PAGAMENTO`.
+- A página de pagamento fake aprova, e o Billing confirma. O modo real usa o sandbox do Mercado Pago e o webhook.
 - A OS vai para `AGUARDANDO_EXECUCAO` e depois `EM_EXECUCAO`.
 - O mecânico avança as etapas. A OS termina em `FINALIZADA`. A saga termina em `CONCLUIDA`.
 - Mostre o fim da saída: OS `FINALIZADA`, saga `CONCLUIDA`.
@@ -81,7 +84,7 @@ Ele mostra o status da OS e o estado da saga a cada passo.
 **Se falhar:**
 
 - Se o port-forward cair, rode o script de novo. Ele recria os túneis.
-- Se o webhook demorar, mostre o link de pagamento. Diga que o sandbox atrasa. Rode o script outra vez.
+- Se a aprovação fake falhar, confira se o Billing está em modo fake. Rode o script outra vez.
 - Se a saga travar, mostre o estado com `GET /api/ordens-servico/{id}/saga` e use a gravação do ensaio.
 
 ## Bloco 3 — `demo-saga.sh falha-execucao` e compensação (3:00)
@@ -103,7 +106,7 @@ Ele roda o fluxo até o pagamento. Execution rejeita o trabalho. No fim, o scrip
 - O cliente aprova e paga, como no bloco anterior.
 - Execution responde `ExecucaoRejeitada`, com motivo `SIMULACAO`.
 - O OS começa a compensação. A saga vai para `ESTORNANDO`.
-- Billing estorna o pagamento no Mercado Pago. Responde `PagamentoEstornado`.
+- Billing estorna o pagamento pelo adaptador fake. Responde `PagamentoEstornado`.
 - O OS devolve as peças ao estoque. A OS fica `CANCELADA`. A saga fica `COMPENSADA`.
 - Mostre o estoque antes e depois. Ele volta ao valor inicial.
 - A flag volta a ficar desligada. Cada passo da compensação é idempotente.
