@@ -33,6 +33,15 @@ data "aws_iam_policy_document" "sqs" {
   }
 
   statement {
+    sid = "LerTamanhoDaDlq"
+    actions = [
+      "sqs:GetQueueAttributes",
+      "sqs:GetQueueUrl",
+    ]
+    resources = [aws_sqs_queue.respostas_dlq.arn]
+  }
+
+  statement {
     sid = "EnviarComandos"
     actions = [
       "sqs:SendMessage",
