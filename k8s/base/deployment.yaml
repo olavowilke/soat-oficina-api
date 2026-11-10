@@ -100,11 +100,6 @@ spec:
                 secretKeyRef:
                   name: oficina-secrets
                   key: JWT_SECRET
-            - name: WEBHOOK_ORCAMENTO_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: oficina-secrets
-                  key: WEBHOOK_ORCAMENTO_TOKEN
             # AdminInitializer cria o usuario administrador no primeiro start.
             # Sem estas duas variaveis ele cairia no padrao publicado em
             # application.yml (admin/admin123) e o cluster subiria com uma

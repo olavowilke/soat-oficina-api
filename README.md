@@ -60,12 +60,10 @@ registrada em [`docs/adr/0001-clean-architecture.md`](https://github.com/olavowi
 
 O desenho é gerado por código, com ícones oficiais da AWS: [`docs/arquitetura/diagramas/caminho-requisicao-aws.py`](https://github.com/olavowilke/soat-oficina-api/blob/main/docs/arquitetura/diagramas/caminho-requisicao-aws.py). Para regerar, instale `graphviz` e rode `pip install diagrams && python docs/arquitetura/diagramas/caminho-requisicao-aws.py`.
 
-Este repositório é dono apenas da **imagem** (`Dockerfile`) e do **código**
-da aplicação; a rede, o cluster e os manifestos base (`Deployment`,
-`Service`, `HPA`, `PDB`) pertencem a `infra-k8s` — a pipeline deste
-repositório não conhece nenhum manifesto/overlay kustomize (eles vivem em
-outro repositório) e só troca a tag da imagem no `Deployment` já existente,
-via `kubectl set image`. Ver [`docs/arquitetura/componentes.md`](https://github.com/olavowilke/soat-oficina-api/blob/main/docs/arquitetura/componentes.md)
+Este repositório é dono da **imagem** (`Dockerfile`), do **código** e dos
+**manifestos Kubernetes** (`k8s/`: `Namespace`, `ServiceAccount`, `ConfigMap`,
+`Deployment`, `Service`, `HPA`, `PDB`; overlay `k8s/overlays/homolog`). A rede e
+o cluster pertencem a `infra-k8s`. Ver [`docs/arquitetura/componentes.md`](https://github.com/olavowilke/soat-oficina-api/blob/main/docs/arquitetura/componentes.md)
 para a visão completa dos 4 repositórios juntos.
 
 ## Passos de execução (local)
@@ -97,30 +95,27 @@ autenticação/admin padrão estão documentados inline em
 
 ## Deploy
 
-A aplicação **não roda Terraform própria** — ela é implantada no cluster já
-existente, provisionado por `infra-k8s`:
+A aplicação é implantada no cluster provisionado por `infra-k8s`. O `cd.yml`
+faz o deploy inteiro:
 
 ```bash
 # build + push (feito pela pipeline, via ECR — ver secrets abaixo)
 docker build -t <ecr_repository_url>:sha-<git-sha> .
 docker push <ecr_repository_url>:sha-<git-sha>
 
-# troca so a imagem do Deployment que ja existe (criado por infra-k8s) —
-# nenhum manifesto/overlay kustomize e lido ou aplicado por esta pipeline
+# Namespace e Secret oficina-secrets primeiro; depois a imagem e um unico apply
 aws eks update-kubeconfig --name <cluster_name> --region <aws_region>
-kubectl -n oficina set image deployment/oficina-api "oficina-api=<ecr_repository_url>:sha-<git-sha>"
+cd k8s/overlays/homolog
+kustomize edit set image "oficina-api=<ecr_repository_url>:sha-<git-sha>"
+kustomize build . | kubectl apply -f -
 kubectl -n oficina rollout status deploy/oficina-api --timeout=300s
 ```
 
-O deploy real é feito pelo workflow `cd.yml` (branch `homolog` → ambiente
-`homolog`, branch `main` → ambiente `prod`): login no ECR via OIDC, build e
-push da imagem, leitura da URL do ECR e do nome do cluster via SSM
-(publicados por `infra-k8s`), `kubectl set image` no `Deployment` já
-existente e um smoke test final contra `/api/actuator/health` através do
-API Gateway. Esta pipeline **não roda kustomize nem conhece o caminho dos
-manifestos** — depois do split, `infra-k8s/k8s/` nem existe dentro deste
-repositório; `infra-k8s` é quem é dono do estado desejado dos manifestos
-(réplicas, HPA, PDB etc.) e quem os aplica.
+O workflow `cd.yml` (push em `main` → ambiente `homolog`) roda esses passos.
+Antes, o job `terraform` cria a fila de respostas da saga e a role do pod.
+Depois do apply, o workflow lê a URL do ECR, o cluster e o endpoint do API
+Gateway no SSM (publicados por `infra-k8s` e `lambda-auth`). Ele cria o Secret
+`oficina-secrets` e roda um smoke test em `/api/actuator/health`.
 
 > **Nota de organização do monorepo:** enquanto os 4 repositórios convivem
 > como diretórios deste monorepo (antes do split — ver

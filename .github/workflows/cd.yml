@@ -10,7 +10,7 @@ name: CD - Build image & Deploy (oficina-api)
 #
 # Secrets do GitHub Actions deste repositorio: AWS_DEPLOY_ROLE_ARN,
 # TF_STATE_BUCKET, TF_LOCK_TABLE, ADMIN_USERNAME, ADMIN_PASSWORD,
-# WEBHOOK_ORCAMENTO_TOKEN, MAIL_USERNAME, MAIL_PASSWORD, NEW_RELIC_LICENSE_KEY.
+# MAIL_USERNAME, MAIL_PASSWORD, NEW_RELIC_LICENSE_KEY.
 # Variaveis: DEPLOY_HOMOLOG (deve ser "true"), AWS_REGION (opcional).
 #   main -> ambiente homolog
 # A variavel de repositorio DEPLOY_HOMOLOG controla o deploy: so roda se for "true".
@@ -124,43 +124,38 @@ jobs:
       # segredo JWT). Os demais valores vem de Secrets do GitHub Actions, via
       # `env:` (nunca interpolados no script).
       #
-      # Na 1a execucao num ambiente novo, infra-database e lambda-auth ainda
-      # nao publicaram os parametros /database/* e /auth/jwt-secret-arn. Se
-      # faltar algum, o passo avisa e termina sem criar o Secret. Rode a
-      # pipeline de novo depois que as duas stacks aplicarem.
+      # infra-database e lambda-auth aplicam antes desta pipeline. Qualquer
+      # erro de leitura no SSM ou no Secrets Manager (parametro ausente,
+      # AccessDenied, throttling) e fatal: o passo imprime o erro e falha.
       - name: Criar Namespace e Secret oficina-secrets
         env:
           ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-          WEBHOOK_ORCAMENTO_TOKEN: ${{ secrets.WEBHOOK_ORCAMENTO_TOKEN }}
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
           MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
           NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
         run: |
-          set -uo pipefail
+          set -euo pipefail
           SSM_BASE="/oficina/${AMBIENTE}"
 
           kubectl create namespace oficina --dry-run=client -o yaml | kubectl apply -f -
 
           ler_param() {
-            aws ssm get-parameter --name "$1" --query 'Parameter.Value' --output text 2>/tmp/ssm-param.err
+            local valor
+            if ! valor="$(aws ssm get-parameter --name "$1" --query 'Parameter.Value' --output text 2>/tmp/ssm-param.err)"; then
+              echo "ERRO: falha ao ler o parametro SSM $1:" >&2
+              cat /tmp/ssm-param.err >&2
+              exit 1
+            fi
+            printf '%s' "$valor"
           }
 
-          FALTANDO=0
-          DB_HOST="$(ler_param "${SSM_BASE}/database/host")" || FALTANDO=1
-          DB_PORT="$(ler_param "${SSM_BASE}/database/port")" || FALTANDO=1
-          DB_NAME="$(ler_param "${SSM_BASE}/database/name")" || FALTANDO=1
-          DB_SECRET_ARN="$(ler_param "${SSM_BASE}/database/secret-arn")" || FALTANDO=1
-          JWT_SECRET_ARN="$(ler_param "${SSM_BASE}/auth/jwt-secret-arn")" || FALTANDO=1
+          DB_HOST="$(ler_param "${SSM_BASE}/database/host")"
+          DB_PORT="$(ler_param "${SSM_BASE}/database/port")"
+          DB_NAME="$(ler_param "${SSM_BASE}/database/name")"
+          DB_SECRET_ARN="$(ler_param "${SSM_BASE}/database/secret-arn")"
+          JWT_SECRET_ARN="$(ler_param "${SSM_BASE}/auth/jwt-secret-arn")"
 
-          if [ "${FALTANDO}" -eq 1 ]; then
-            echo "AVISO: um ou mais parametros SSM de ${SSM_BASE}/{database,auth} ainda nao existem."
-            echo "AVISO: isso e esperado na 1a execucao, ANTES de infra-database e lambda-auth."
-            echo "AVISO: pulando o Secret oficina-secrets. Repita esta pipeline depois que as duas stacks aplicarem."
-            exit 0
-          fi
-
-          set -e
           DB_CREDS="$(aws secretsmanager get-secret-value --secret-id "$DB_SECRET_ARN" --query 'SecretString' --output text)"
           DB_USERNAME="$(echo "$DB_CREDS" | jq -r '.username')"
           DB_PASSWORD="$(echo "$DB_CREDS" | jq -r '.password')"
@@ -184,7 +179,6 @@ jobs:
             --from-literal=DB_USERNAME="${DB_USERNAME}" \
             --from-literal=DB_PASSWORD="${DB_PASSWORD}" \
             --from-literal=JWT_SECRET="${JWT_SECRET}" \
-            --from-literal=WEBHOOK_ORCAMENTO_TOKEN="${WEBHOOK_ORCAMENTO_TOKEN}" \
             --from-literal=ADMIN_USERNAME="${ADMIN_USERNAME}" \
             --from-literal=ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
             --from-literal=MAIL_USERNAME="${MAIL_USERNAME}" \
