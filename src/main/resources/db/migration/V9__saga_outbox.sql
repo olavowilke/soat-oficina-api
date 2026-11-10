@@ -30,7 +30,9 @@ CREATE TABLE outbox (
     criado_em TIMESTAMPTZ NOT NULL,
     enviado_em TIMESTAMPTZ,
     tentativas INTEGER NOT NULL DEFAULT 0,
-    proxima_tentativa_em TIMESTAMPTZ
+    proxima_tentativa_em TIMESTAMPTZ,
+    -- Cabeçalho newrelic da transação que gravou a linha. O relay o envia como atributo da mensagem.
+    trace_headers TEXT
 );
 
 CREATE INDEX ix_outbox_pendentes ON outbox (enviado_em) WHERE enviado_em IS NULL;

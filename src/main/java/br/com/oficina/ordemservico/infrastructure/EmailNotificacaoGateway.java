@@ -64,13 +64,23 @@ public class EmailNotificacaoGateway implements NotificacaoGateway {
         return "Olá, " + nome + ".\n\n"
                 + "A sua Ordem de Serviço " + notificacao.ordemServicoId()
                 + " foi atualizada para o status: " + descricao(notificacao.novoStatus()) + ".\n\n"
+                + complemento(notificacao)
                 + "Atenciosamente,\nOficina Mecânica";
+    }
+
+    private String complemento(NotificacaoStatusOrdem notificacao) {
+        String link = notificacao.linkPagamento();
+        if (notificacao.novoStatus() == StatusOS.AGUARDANDO_PAGAMENTO && link != null && !link.isBlank()) {
+            return "Para pagar, use este link: " + link + "\n\n";
+        }
+        return "";
     }
 
     private String descricao(StatusOS status) {
         return switch (status) {
             case AGUARDANDO_ORCAMENTO -> "Aguardando orçamento";
-            case AGUARDANDO_APROVACAO -> "Aguardando aprovação do orçamento";
+            case AGUARDANDO_APROVACAO -> "Orçamento pronto, aguardando a sua aprovação";
+            case AGUARDANDO_PAGAMENTO -> "Aguardando pagamento";
             case EM_EXECUCAO -> "Em execução";
             case FINALIZADA -> "Finalizada";
             case ENTREGUE -> "Entregue";

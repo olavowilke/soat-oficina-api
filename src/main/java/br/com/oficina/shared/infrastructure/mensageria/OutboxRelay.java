@@ -14,7 +14,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -38,19 +37,17 @@ public class OutboxRelay {
     private final OutboxJpaRepository repository;
     private final SqsTemplate sqsTemplate;
     private final ObjectMapper mapper;
-    private final TracingMensagens tracing;
     private final TransactionTemplate tx;
     private final String filaBilling;
     private final String filaExecucao;
 
     public OutboxRelay(OutboxJpaRepository repository, SqsTemplate sqsTemplate, ObjectMapper mapper,
-                       TracingMensagens tracing, TransactionTemplate tx,
+                       TransactionTemplate tx,
                        @Value("${oficina.filas.billing-comandos}") String filaBilling,
                        @Value("${oficina.filas.execucao-comandos}") String filaExecucao) {
         this.repository = repository;
         this.sqsTemplate = sqsTemplate;
         this.mapper = mapper;
-        this.tracing = tracing;
         this.tx = tx;
         this.filaBilling = filaBilling;
         this.filaExecucao = filaExecucao;
@@ -106,13 +103,12 @@ public class OutboxRelay {
         MensagemSaga mensagem = new MensagemSaga(linha.getId(), linha.getSagaId(), linha.getOsId(), linha.getTipo(),
                 linha.getCorrelationId(), linha.getCriadoEm(), mapper.readTree(linha.getPayload()));
         String corpo = mapper.writeValueAsString(mensagem);
-        Map<String, String> trace = tracing.cabecalhosSaida();
         sqsTemplate.send(to -> {
             to.queue(fila).payload(corpo)
                     .header("type", linha.getTipo())
                     .header("correlationId", linha.getCorrelationId());
-            String newrelic = trace.get("newrelic");
-            if (newrelic != null) to.header("newrelic", newrelic);
+            String newrelic = linha.getTraceHeaders();
+            if (newrelic != null && !newrelic.isBlank()) to.header("newrelic", newrelic);
         });
     }
 

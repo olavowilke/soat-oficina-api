@@ -34,6 +34,7 @@ class OutboxRelayIT extends BaseControllerIT {
     @Autowired private SagaGateway sagaGateway;
     @Autowired private OrdemServicoGateway ordemServicoGateway;
     @Autowired private OutboxRelay relay;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean private TracingMensagens tracing;
     @Autowired private SqsAsyncClient sqs;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private ObjectMapper mapper;
@@ -160,6 +161,38 @@ class OutboxRelayIT extends BaseControllerIT {
         assertThat(atributos.get("type").stringValue()).isEqualTo("IniciarExecucao");
         assertThat(atributos.get("correlationId").stringValue()).isNotBlank();
         assertThat(atributos).doesNotContainKey("newrelic");
+    }
+
+    @Test
+    void relayEnviaOCabecalhoDeTraceGuardadoNaLinha() throws Exception {
+        UUID id = linha(UUID.randomUUID(), "billing-commands", "ComTrace");
+        jdbc.update("UPDATE outbox SET trace_headers = 'cabecalho-nr' WHERE id = ?", id);
+        UUID branca = linha(UUID.randomUUID(), "billing-commands", "TraceEmBranco");
+        jdbc.update("UPDATE outbox SET trace_headers = '  ' WHERE id = ?", branca);
+
+        relay.enviarPendentes();
+
+        List<Message> msgs = receber(filaBilling, 2);
+        assertThat(msgs).hasSize(2);
+        for (Message m : msgs) {
+            if (tipo(m.body()).equals("ComTrace")) {
+                assertThat(m.messageAttributes().get("newrelic").stringValue()).isEqualTo("cabecalho-nr");
+            } else {
+                assertThat(m.messageAttributes()).doesNotContainKey("newrelic");
+            }
+        }
+    }
+
+    @Test
+    void comandoGuardaOCabecalhoDeTraceDoMomentoDaGravacao() {
+        OrdemServico os = osComItens();
+        SagaOrdemServico saga = sagaGateway.salvar(SagaOrdemServico.iniciar(os.getId(), Instant.now()));
+        org.mockito.Mockito.when(tracing.cabecalhosSaida()).thenReturn(java.util.Map.of("newrelic", "nr-na-gravacao"));
+
+        tx.executeWithoutResult(s -> comandos.estornarPagamento(saga, "motivo"));
+
+        assertThat(jdbc.queryForObject("SELECT trace_headers FROM outbox WHERE saga_id = ?", String.class,
+                saga.getId())).isEqualTo("nr-na-gravacao");
     }
 
     @Test

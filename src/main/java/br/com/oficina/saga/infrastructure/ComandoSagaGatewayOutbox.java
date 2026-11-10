@@ -8,6 +8,7 @@ import br.com.oficina.saga.gateways.ComandoSagaGateway;
 import br.com.oficina.shared.infrastructure.CorrelationIdFilter;
 import br.com.oficina.shared.infrastructure.mensageria.OutboxData;
 import br.com.oficina.shared.infrastructure.mensageria.OutboxJpaRepository;
+import br.com.oficina.shared.infrastructure.mensageria.TracingMensagens;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -33,10 +34,12 @@ public class ComandoSagaGatewayOutbox implements ComandoSagaGateway {
 
     private final OutboxJpaRepository outbox;
     private final ObjectMapper mapper;
+    private final TracingMensagens tracing;
 
-    public ComandoSagaGatewayOutbox(OutboxJpaRepository outbox, ObjectMapper mapper) {
+    public ComandoSagaGatewayOutbox(OutboxJpaRepository outbox, ObjectMapper mapper, TracingMensagens tracing) {
         this.outbox = outbox;
         this.mapper = mapper;
+        this.tracing = tracing;
     }
 
     @Override
@@ -94,6 +97,7 @@ public class ComandoSagaGatewayOutbox implements ComandoSagaGateway {
         linha.setCorrelationId(correlationIdAtual());
         linha.setPayload(payload.toString());
         linha.setCriadoEm(Instant.now());
+        linha.setTraceHeaders(tracing.cabecalhosSaida().get("newrelic"));
         outbox.save(linha);
     }
 

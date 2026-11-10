@@ -58,4 +58,8 @@ public class OutboxData {
 
     @Column(name = "proxima_tentativa_em")
     private Instant proximaTentativaEm;
+
+    /** Cabeçalho {@code newrelic} capturado na gravação; nulo sem trace. */
+    @Column(name = "trace_headers")
+    private String traceHeaders;
 }
