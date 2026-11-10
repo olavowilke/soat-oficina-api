@@ -11,13 +11,11 @@ import br.com.oficina.ordemservico.presenters.StatusOSPresenter;
 import br.com.oficina.ordemservico.usecases.AbrirOrdemServicoUseCase;
 import br.com.oficina.ordemservico.usecases.AdicionarPecaUseCase;
 import br.com.oficina.ordemservico.usecases.AdicionarServicoUseCase;
-import br.com.oficina.ordemservico.usecases.AprovarOrcamentoUseCase;
 import br.com.oficina.ordemservico.usecases.AvancarStatusUseCase;
 import br.com.oficina.ordemservico.usecases.BuscarOrdemServicoUseCase;
 import br.com.oficina.ordemservico.usecases.CriarOrdemServicoUseCase;
 import br.com.oficina.ordemservico.usecases.ListarOrdensServicoUseCase;
 import br.com.oficina.ordemservico.usecases.MonitorarTempoMedioUseCase;
-import br.com.oficina.ordemservico.usecases.RecusarOrcamentoUseCase;
 import br.com.oficina.ordemservico.usecases.RemoverPecaUseCase;
 import br.com.oficina.servico.controllers.ServicoController;
 import br.com.oficina.servico.presenters.ServicoPresenter;
@@ -112,10 +110,6 @@ class SecurityConfigTest {
     private RemoverPecaUseCase removerPeca;
     @MockBean
     private AvancarStatusUseCase avancarStatus;
-    @MockBean
-    private AprovarOrcamentoUseCase aprovarOrcamento;
-    @MockBean
-    private RecusarOrcamentoUseCase recusarOrcamento;
     @MockBean
     private BuscarOrdemServicoUseCase buscarOrdemServico;
     @MockBean
@@ -222,10 +216,9 @@ class SecurityConfigTest {
     }
 
     @Test
-    @WithMockUser(roles = "CLIENTE")
-    void clienteAlcancaOMatcherDaAprovacaoDeOrcamento() throws Exception {
-        mockMvc.perform(post("/ordens-servico/" + UUID.randomUUID() + "/aprovar-orcamento"))
-                .andExpect(status().is(not(403)));
+    void webhooksDeixaramDeSerPublicos() throws Exception {
+        mockMvc.perform(post("/webhooks/orcamento/decisao"))
+                .andExpect(status().isUnauthorized());
     }
 
     // --- criacao de operador deixou de ser publica ------------------------------

@@ -10,8 +10,6 @@ services:
       DB_USERNAME: oficina
       DB_PASSWORD: oficina
       JWT_SECRET: ZmljYXAtb2ZpY2luYS1hcGktc2VjcmV0LWtleS1tdXN0LWJlLWF0LWxlYXN0LTI1Ni1iaXRzLWxvbmch
-      # Webhook de decisão de orçamento (Etapa 7)
-      WEBHOOK_ORCAMENTO_TOKEN: dev-webhook-token-change-me
       # Notificação de status por e-mail (Etapa 8) — envia para o Mailhog local
       NOTIFICACAO_EMAIL_ENABLED: "true"
       NOTIFICACAO_EMAIL_REMETENTE: nao-responder@oficina.com

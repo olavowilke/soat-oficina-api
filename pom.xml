@@ -332,19 +332,13 @@
                         </goals>
                         <configuration>
                             <dataFile>${project.build.directory}/jacoco-merged.exec</dataFile>
+                            <excludes>
+                                <exclude>**/OficinaApplication.class</exclude>
+                                <exclude>**/infrastructure/config/**</exclude>
+                            </excludes>
                             <rules>
                                 <rule>
-                                    <element>PACKAGE</element>
-                                    <includes>
-                                        <include>br.com.oficina.ordemservico.domain.*</include>
-                                        <include>br.com.oficina.ordemservico.application.*</include>
-                                        <include>br.com.oficina.cliente.domain.*</include>
-                                        <include>br.com.oficina.cliente.application.*</include>
-                                        <include>br.com.oficina.peca.domain.*</include>
-                                        <include>br.com.oficina.peca.application.*</include>
-                                        <include>br.com.oficina.veiculo.domain.*</include>
-                                        <include>br.com.oficina.veiculo.application.*</include>
-                                    </includes>
+                                    <element>BUNDLE</element>
                                     <limits>
                                         <limit>
                                             <counter>LINE</counter>

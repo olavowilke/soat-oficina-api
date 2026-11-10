@@ -1,7 +1,6 @@
 package br.com.oficina.shared.infrastructure;
 
 import br.com.oficina.shared.domain.ApiError;
-import br.com.oficina.shared.domain.AutenticacaoWebhookException;
 import br.com.oficina.shared.domain.RecursoNaoEncontradoException;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
@@ -61,12 +60,6 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleBadCredentials(BadCredentialsException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(ApiError.of(401, "Unauthorized", "Credenciais inválidas"));
-    }
-
-    @ExceptionHandler(AutenticacaoWebhookException.class)
-    public ResponseEntity<ApiError> handleAutenticacaoWebhook(AutenticacaoWebhookException ex) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(ApiError.of(401, "Unauthorized", ex.getMessage()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

@@ -108,25 +108,16 @@ class OrdemServicoControllerIT extends BaseControllerIT {
     }
 
     @Test
-    void shouldExecuteFullFlowFromRecebidaToEntregue() {
+    void shouldAllowManualTransitionsOnly() {
         OrdemServicoResponse os = criarOS();
         UUID osId = os.id();
 
-        patchStatus(osId, StatusOS.EM_DIAGNOSTICO);
-        patchStatus(osId, StatusOS.AGUARDANDO_APROVACAO);
+        OrdemServicoResponse emDiagnostico = patchStatus(osId, StatusOS.EM_DIAGNOSTICO);
+        assertEquals(StatusOS.EM_DIAGNOSTICO, emDiagnostico.status());
 
-        ResponseEntity<OrdemServicoResponse> aprovado = authPost(
-                "/ordens-servico/" + osId + "/aprovar-orcamento", null, OrdemServicoResponse.class);
-        assertEquals(HttpStatus.OK, aprovado.getStatusCode());
-        assertEquals(StatusOS.EM_EXECUCAO, aprovado.getBody().status());
-        assertNotNull(aprovado.getBody().inicioExecucao());
-
-        OrdemServicoResponse finalizada = patchStatus(osId, StatusOS.FINALIZADA);
-        assertEquals(StatusOS.FINALIZADA, finalizada.status());
-        assertNotNull(finalizada.fimExecucao());
-
-        OrdemServicoResponse entregue = patchStatus(osId, StatusOS.ENTREGUE);
-        assertEquals(StatusOS.ENTREGUE, entregue.status());
+        ResponseEntity<Object> saga = authPatch("/ordens-servico/" + osId + "/status",
+                new AvancarStatusRequest(StatusOS.AGUARDANDO_ORCAMENTO), Object.class);
+        assertEquals(HttpStatus.CONFLICT, saga.getStatusCode());
     }
 
     @Test
@@ -136,20 +127,6 @@ class OrdemServicoControllerIT extends BaseControllerIT {
         ResponseEntity<Object> response = authPatch("/ordens-servico/" + os.id() + "/status",
                 request, Object.class);
         assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
-    }
-
-    @Test
-    void shouldReturn200WhenRecusandoOrcamento() {
-        OrdemServicoResponse os = criarOS();
-        UUID osId = os.id();
-
-        patchStatus(osId, StatusOS.EM_DIAGNOSTICO);
-        patchStatus(osId, StatusOS.AGUARDANDO_APROVACAO);
-
-        ResponseEntity<OrdemServicoResponse> recusado = authPost(
-                "/ordens-servico/" + osId + "/recusar-orcamento", null, OrdemServicoResponse.class);
-        assertEquals(HttpStatus.OK, recusado.getStatusCode());
-        assertEquals(StatusOS.CANCELADA, recusado.getBody().status());
     }
 
     @Test

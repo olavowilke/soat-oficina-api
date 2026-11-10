@@ -3,8 +3,7 @@
 Quarto dos quatro repositórios da Fase 3 do Tech Challenge FIAP PosTech
 (SOAT). Sistema Integrado de Atendimento e Execução de Serviços para
 oficina mecânica: cadastro de clientes/veículos/serviços/peças, abertura e
-acompanhamento de Ordens de Serviço, aprovação de orçamento via webhook e
-notificação por e-mail — em **Clean Architecture**, publicado como imagem
+acompanhamento de Ordens de Serviço e notificação por e-mail — em **Clean Architecture**, publicado como imagem
 Docker e implantado no cluster **EKS** provisionado por `infra-k8s`.
 
 ## Propósito
@@ -28,7 +27,7 @@ no ECR e troca a tag no `Deployment` já existente, aplicado por
 | Banco de dados | PostgreSQL 16 (RDS gerenciado por `infra-database`) |
 | Migrations | Flyway |
 | Segurança | Spring Security + JWT (JJWT 0.12) — JWT emitido por `lambda-auth` para o cliente final; login administrativo próprio para a equipe da oficina |
-| Notificações | Spring Mail (SMTP/SendGrid) + webhook de entrada |
+| Notificações | Spring Mail (SMTP/SendGrid) |
 | Documentação | SpringDoc OpenAPI / Swagger UI |
 | Observabilidade | Agente Java New Relic + Micrometer (métricas de negócio) + logs JSON com correlação |
 | Testes | JUnit 5 + Mockito + Testcontainers + ArchUnit |
@@ -86,7 +85,7 @@ docker compose up --build
 ```
 
 A API estará disponível em `http://localhost:8080/api`. Variáveis de
-ambiente completas (banco, JWT, webhook, e-mail) e o passo a passo de
+ambiente completas (banco, JWT, e-mail) e o passo a passo de
 autenticação/admin padrão estão documentados inline em
 [`src/main/resources/application.yml`](src/main/resources/application.yml).
 

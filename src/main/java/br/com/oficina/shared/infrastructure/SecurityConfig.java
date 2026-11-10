@@ -75,8 +75,6 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/auth/register").hasRole("ADMIN")
                         .requestMatchers("/auth/login").permitAll()
                         .requestMatchers("/public/**").permitAll()
-                        // Webhooks: autenticados por token compartilhado no próprio controller
-                        .requestMatchers("/webhooks/**").permitAll()
                         // Catálogo de serviços e estoque de peças, e cadastro de clientes/veículos:
                         // rotas de operador (ADMIN/MECANICO, os únicos valores de Role - ver
                         // br.com.oficina.auth.entities.Role). Tokens de cliente (role "CLIENTE",
@@ -107,8 +105,6 @@ public class SecurityConfig {
                         // tem o mesmo papel CLIENTE. Quem decide é AcessoOrdemServico, dentro
                         // do controller, comparando o dono da ordem com a claim clienteId do
                         // token.
-                        .requestMatchers("/ordens-servico/*/aprovar-orcamento",
-                                "/ordens-servico/*/recusar-orcamento").authenticated()
                         .requestMatchers(HttpMethod.GET, "/ordens-servico/*").authenticated()
                         .anyRequest().authenticated()
                 )

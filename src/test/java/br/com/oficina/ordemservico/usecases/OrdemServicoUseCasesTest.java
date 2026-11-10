@@ -3,12 +3,14 @@ package br.com.oficina.ordemservico.usecases;
 import br.com.oficina.cliente.gateways.ClienteGateway;
 import br.com.oficina.ordemservico.entities.OrdemServico;
 import br.com.oficina.ordemservico.entities.StatusOS;
+import br.com.oficina.ordemservico.entities.TransicaoControladaPelaSagaException;
 import br.com.oficina.ordemservico.gateways.OrdemServicoGateway;
 import br.com.oficina.peca.entities.Peca;
 import br.com.oficina.peca.gateways.PecaGateway;
 import br.com.oficina.servico.entities.Servico;
 import br.com.oficina.servico.gateways.ServicoGateway;
 import br.com.oficina.shared.domain.RecursoNaoEncontradoException;
+import br.com.oficina.shared.infrastructure.GlobalExceptionHandler;
 import br.com.oficina.veiculo.gateways.VeiculoGateway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,8 +48,6 @@ class OrdemServicoUseCasesTest {
     private AdicionarServicoUseCase adicionarServico;
     private AdicionarPecaUseCase adicionarPeca;
     private AvancarStatusUseCase avancarStatus;
-    private AprovarOrcamentoUseCase aprovarOrcamento;
-    private RecusarOrcamentoUseCase recusarOrcamento;
     private BuscarOrdemServicoUseCase buscar;
 
     private UUID clienteId;
@@ -61,8 +61,6 @@ class OrdemServicoUseCasesTest {
         adicionarServico = new AdicionarServicoUseCase(ordemServicoGateway, servicoGateway);
         adicionarPeca = new AdicionarPecaUseCase(ordemServicoGateway, pecaGateway);
         avancarStatus = new AvancarStatusUseCase(ordemServicoGateway, notificador);
-        aprovarOrcamento = new AprovarOrcamentoUseCase(ordemServicoGateway, notificador);
-        recusarOrcamento = new RecusarOrcamentoUseCase(ordemServicoGateway, notificador);
         buscar = new BuscarOrdemServicoUseCase(ordemServicoGateway);
         clienteId = UUID.randomUUID();
         veiculoId = UUID.randomUUID();
@@ -258,28 +256,27 @@ class OrdemServicoUseCasesTest {
     }
 
     @Test
-    void deveAprovarOrcamento() {
+    void patchStatusParaTransicaoDaSagaRetorna409() {
         OrdemServico os = OrdemServico.nova(clienteId, veiculoId, null);
         os.avancarStatus(StatusOS.EM_DIAGNOSTICO);
-        os.avancarStatus(StatusOS.AGUARDANDO_APROVACAO);
-
         when(ordemServicoGateway.findById(os.getId())).thenReturn(Optional.of(os));
-        when(ordemServicoGateway.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        OrdemServico resultado = aprovarOrcamento.execute(os.getId());
-        assertThat(resultado.getStatus()).isEqualTo(StatusOS.EM_EXECUCAO);
+        assertThatThrownBy(() -> avancarStatus.execute(os.getId(), StatusOS.AGUARDANDO_ORCAMENTO))
+                .isInstanceOf(TransicaoControladaPelaSagaException.class);
+        verify(ordemServicoGateway, never()).save(any());
+        assertThat(new GlobalExceptionHandler()
+                .handleIllegalState(new TransicaoControladaPelaSagaException(
+                        StatusOS.EM_DIAGNOSTICO, StatusOS.AGUARDANDO_ORCAMENTO))
+                .getStatusCode().value()).isEqualTo(409);
     }
 
     @Test
-    void deveRecusarOrcamento() {
-        OrdemServico os = OrdemServico.nova(clienteId, veiculoId, null);
-        os.avancarStatus(StatusOS.EM_DIAGNOSTICO);
-        os.avancarStatus(StatusOS.AGUARDANDO_APROVACAO);
-
+    void deveAvancarFinalizadaParaEntregue() {
+        OrdemServico os = OrdemServico.reconstituir(UUID.randomUUID(), clienteId, veiculoId, StatusOS.FINALIZADA,
+                null, List.of(), List.of(), null, null, null, null);
         when(ordemServicoGateway.findById(os.getId())).thenReturn(Optional.of(os));
         when(ordemServicoGateway.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        OrdemServico resultado = recusarOrcamento.execute(os.getId());
-        assertThat(resultado.getStatus()).isEqualTo(StatusOS.CANCELADA);
+        assertThat(avancarStatus.execute(os.getId(), StatusOS.ENTREGUE).getStatus()).isEqualTo(StatusOS.ENTREGUE);
     }
 }

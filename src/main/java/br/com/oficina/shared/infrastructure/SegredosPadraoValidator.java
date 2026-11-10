@@ -11,9 +11,9 @@ import java.util.Set;
  * Impede a aplicação de subir num ambiente real com os valores de exemplo que
  * estão publicados em {@code application.yml}.
  *
- * <p>Os quatro repositórios da Fase 3 são públicos. Qualquer pessoa lê o
- * {@code application.yml} e vê o segredo JWT, a senha do admin e o token do
- * webhook usados como padrão de desenvolvimento. Enquanto o ambiente real
+ * <p>Os repositórios da Fase 3 são públicos. Qualquer pessoa lê o
+ * {@code application.yml} e vê o segredo JWT e a senha do admin
+ * usados como padrão de desenvolvimento. Enquanto o ambiente real
  * definir as variáveis correspondentes, isso é inofensivo. Se alguém esquecer
  * uma delas, o ambiente sobe com uma credencial que está na internet:
  *
@@ -21,9 +21,7 @@ import java.util.Set;
  *     <li>segredo JWT publicado — o atacante assina o próprio token com a role
  *     ADMIN e passa pelo {@code JwtAuthenticationFilter};</li>
  *     <li>senha de admin publicada — {@code AdminInitializer} cria o usuário
- *     administrador com ela no primeiro start;</li>
- *     <li>token de webhook publicado — o atacante aprova ou recusa orçamento
- *     de qualquer ordem de serviço.</li>
+ *     administrador com ela no primeiro start.</li>
  * </ul>
  *
  * <p>Este bean falha no construtor, então o contexto do Spring nem termina de
@@ -40,13 +38,11 @@ public class SegredosPadraoValidator {
     static final String JWT_PADRAO =
             "ZmljYXAtb2ZpY2luYS1hcGktc2VjcmV0LWtleS1tdXN0LWJlLWF0LWxlYXN0LTI1Ni1iaXRzLWxvbmch";
     static final String SENHA_ADMIN_PADRAO = "admin123";
-    static final String WEBHOOK_PADRAO = "dev-webhook-token-change-me";
 
     public SegredosPadraoValidator(
             @Value("${spring.profiles.active:dev}") String perfilAtivo,
             @Value("${app.jwt.secret:}") String jwtSecret,
-            @Value("${app.admin.password:}") String senhaAdmin,
-            @Value("${app.webhook.orcamento.token:}") String tokenWebhook) {
+            @Value("${app.admin.password:}") String senhaAdmin) {
 
         if (PERFIS_LOCAIS.contains(perfilAtivo.trim())) {
             return;
@@ -55,7 +51,6 @@ public class SegredosPadraoValidator {
         List<String> pendentes = new ArrayList<>();
         adicionarSePadrao(pendentes, "JWT_SECRET", jwtSecret, JWT_PADRAO);
         adicionarSePadrao(pendentes, "ADMIN_PASSWORD", senhaAdmin, SENHA_ADMIN_PADRAO);
-        adicionarSePadrao(pendentes, "WEBHOOK_ORCAMENTO_TOKEN", tokenWebhook, WEBHOOK_PADRAO);
 
         if (!pendentes.isEmpty()) {
             throw new IllegalStateException(

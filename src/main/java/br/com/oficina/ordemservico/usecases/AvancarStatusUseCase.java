@@ -2,6 +2,7 @@ package br.com.oficina.ordemservico.usecases;
 
 import br.com.oficina.ordemservico.entities.OrdemServico;
 import br.com.oficina.ordemservico.entities.StatusOS;
+import br.com.oficina.ordemservico.entities.TransicaoControladaPelaSagaException;
 import br.com.oficina.ordemservico.gateways.OrdemServicoGateway;
 import br.com.oficina.shared.domain.RecursoNaoEncontradoException;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,9 @@ public class AvancarStatusUseCase {
     public OrdemServico execute(UUID ordemServicoId, StatusOS novoStatus) {
         OrdemServico os = ordemServicoGateway.findById(ordemServicoId)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Ordem de Serviço", ordemServicoId));
+        if (!os.getStatus().transicaoManualPermitida(novoStatus)) {
+            throw new TransicaoControladaPelaSagaException(os.getStatus(), novoStatus);
+        }
         os.avancarStatus(novoStatus);
         OrdemServico salva = ordemServicoGateway.save(os);
         notificador.notificar(salva);

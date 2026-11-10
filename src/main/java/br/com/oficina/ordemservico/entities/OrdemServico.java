@@ -87,26 +87,55 @@ public class OrdemServico {
     }
 
     public void avancarStatus(StatusOS novoStatus) {
-        if (!status.podeTransicionarPara(novoStatus)) {
-            throw new IllegalStateException(
-                    "Transição inválida: " + status + " → " + novoStatus);
-        }
-        if (novoStatus == StatusOS.EM_EXECUCAO) {
-            this.inicioExecucao = LocalDateTime.now();
-        }
-        if (novoStatus == StatusOS.FINALIZADA) {
-            this.fimExecucao = LocalDateTime.now();
-        }
+        validarTransicao(novoStatus);
         this.status = novoStatus;
         this.atualizadoEm = LocalDateTime.now();
     }
 
-    public void aprovarOrcamento() {
+    public void enviarParaOrcamento() {
+        if (itensServico.isEmpty() && itensPeca.isEmpty()) {
+            throw new IllegalStateException("A OS precisa de pelo menos um item para gerar orçamento");
+        }
+        avancarStatus(StatusOS.AGUARDANDO_ORCAMENTO);
+    }
+
+    public void registrarOrcamentoGerado() {
+        avancarStatus(StatusOS.AGUARDANDO_APROVACAO);
+    }
+
+    public void voltarParaDiagnostico() {
+        avancarStatus(StatusOS.EM_DIAGNOSTICO);
+    }
+
+    public void registrarAprovacao() {
+        avancarStatus(StatusOS.AGUARDANDO_PAGAMENTO);
+    }
+
+    public void registrarPagamentoConfirmado() {
+        avancarStatus(StatusOS.AGUARDANDO_EXECUCAO);
+    }
+
+    public void iniciarExecucao(LocalDateTime inicio) {
+        validarTransicao(StatusOS.EM_EXECUCAO);
+        this.inicioExecucao = inicio;
         avancarStatus(StatusOS.EM_EXECUCAO);
     }
 
-    public void recusarOrcamento() {
+    public void finalizarExecucao(LocalDateTime fim) {
+        validarTransicao(StatusOS.FINALIZADA);
+        this.fimExecucao = fim;
+        avancarStatus(StatusOS.FINALIZADA);
+    }
+
+    public void cancelar() {
         avancarStatus(StatusOS.CANCELADA);
+    }
+
+    private void validarTransicao(StatusOS novoStatus) {
+        if (!status.podeTransicionarPara(novoStatus)) {
+            throw new IllegalStateException(
+                    "Transição inválida: " + status + " → " + novoStatus);
+        }
     }
 
     public BigDecimal calcularOrcamentoTotal() {
@@ -120,7 +149,7 @@ public class OrdemServico {
     }
 
     private void validarEdicaoPermitida() {
-        if (status == StatusOS.FINALIZADA || status == StatusOS.ENTREGUE || status == StatusOS.CANCELADA) {
+        if (status != StatusOS.RECEBIDA && status != StatusOS.EM_DIAGNOSTICO) {
             throw new IllegalStateException("Não é possível editar uma OS com status " + status);
         }
     }

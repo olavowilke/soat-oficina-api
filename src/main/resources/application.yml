@@ -98,10 +98,6 @@ app:
   admin:
     username: ${ADMIN_USERNAME:admin}
     password: ${ADMIN_PASSWORD:admin123}
-  webhook:
-    orcamento:
-      # Token compartilhado que autentica notificações externas de decisão de orçamento.
-      token: ${WEBHOOK_ORCAMENTO_TOKEN:dev-webhook-token-change-me}
   notificacao:
     email:
       # Em dev/test o envio real fica desabilitado (usa LogNotificacaoGateway).
