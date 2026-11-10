@@ -34,7 +34,6 @@ class OutboxRelayIT extends BaseControllerIT {
     @Autowired private SagaGateway sagaGateway;
     @Autowired private OrdemServicoGateway ordemServicoGateway;
     @Autowired private OutboxRelay relay;
-    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean private TracingMensagens tracing;
     @Autowired private SqsAsyncClient sqs;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private ObjectMapper mapper;
@@ -184,18 +183,6 @@ class OutboxRelayIT extends BaseControllerIT {
     }
 
     @Test
-    void comandoGuardaOCabecalhoDeTraceDoMomentoDaGravacao() {
-        OrdemServico os = osComItens();
-        SagaOrdemServico saga = sagaGateway.salvar(SagaOrdemServico.iniciar(os.getId(), Instant.now()));
-        org.mockito.Mockito.when(tracing.cabecalhosSaida()).thenReturn(java.util.Map.of("newrelic", "nr-na-gravacao"));
-
-        tx.executeWithoutResult(s -> comandos.estornarPagamento(saga, "motivo"));
-
-        assertThat(jdbc.queryForObject("SELECT trace_headers FROM outbox WHERE saga_id = ?", String.class,
-                saga.getId())).isEqualTo("nr-na-gravacao");
-    }
-
-    @Test
     void executarPassaPeloAgendadorMarcaEnviadoEEnviaUmaSoCopia() throws Exception {
         OrdemServico os = osComItens();
         SagaOrdemServico saga = sagaGateway.salvar(SagaOrdemServico.iniciar(os.getId(), Instant.now()));
@@ -206,7 +193,11 @@ class OutboxRelayIT extends BaseControllerIT {
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox WHERE enviado_em IS NOT NULL", Integer.class))
                 .isEqualTo(1);
-        assertThat(receber(filaBilling, 1)).hasSize(1);
+        List<Message> recebidas = receber(filaBilling, 1);
+        assertThat(recebidas).hasSize(1);
+        // Apaga a mensagem: a fila de teste reentrega mensagens não apagadas após 5 s.
+        String url = sqs.getQueueUrl(r -> r.queueName(filaBilling)).get().queueUrl();
+        sqs.deleteMessage(r -> r.queueUrl(url).receiptHandle(recebidas.get(0).receiptHandle())).get();
         assertThat(receber(filaBilling, 1)).isEmpty();
     }
 

@@ -16,4 +16,7 @@ public interface PecaGateway {
     List<Peca> findAllAtivos();
     Peca save(Peca peca);
     boolean existsById(UUID id);
+
+    /** Soma {@code quantidade} ao estoque em um UPDATE atômico (sem ler e regravar o valor). */
+    void devolverAoEstoque(UUID id, int quantidade);
 }

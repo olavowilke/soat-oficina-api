@@ -21,6 +21,12 @@ import java.util.UUID;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
+/**
+ * Base dos ITs. Todos compartilham UM contexto Spring: não use @MockitoBean, @MockitoSpyBean nem
+ * @TestPropertySource nos ITs. Um contexto extra sobe um segundo RespostasListener na mesma fila
+ * e rouba mensagens dos outros testes. Para simular falha, use o banco (ver RespostasListenerIT).
+ * As filas usam VisibilityTimeout=5 s para que a reentrega seja rápida nos testes.
+ */
 public abstract class BaseControllerIT {
 
     // Singleton container: started once for the JVM and reused across all IT classes,
@@ -41,7 +47,8 @@ public abstract class BaseControllerIT {
         for (String fila : new String[]{"oficina-homolog-os-saga-replies",
                 "oficina-homolog-billing-commands", "oficina-homolog-execution-commands"}) {
             try {
-                var r = localstack.execInContainer("awslocal", "sqs", "create-queue", "--queue-name", fila);
+                var r = localstack.execInContainer("awslocal", "sqs", "create-queue", "--queue-name", fila,
+                        "--attributes", "VisibilityTimeout=5");
                 if (r.getExitCode() != 0) {
                     throw new IllegalStateException("Falha ao criar fila " + fila + ": " + r.getStderr());
                 }

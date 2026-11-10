@@ -63,9 +63,10 @@ public class ProcessarRespostaSagaUseCase {
             log.warn("Resposta {} fora de ordem: saga {} em {}; sem mudança ({})",
                     r.type(), saga.getId(), estadoAntes, e.getMessage());
         } catch (PayloadInvalidoException e) {
-            // Erro de negócio no payload: repetir não ajuda. Nada mudou; a mensagem é confirmada.
+            // A mensagem não é confirmada: vai para a DLQ depois das tentativas, e o alerta de DLQ avisa o operador.
             log.error("Payload inválido em {} da saga {} (mensagem {}): {}",
                     r.type(), saga.getId(), r.messageId(), e.getMessage());
+            throw e;
         }
     }
 

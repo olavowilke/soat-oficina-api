@@ -10,6 +10,7 @@ import io.awspring.cloud.sqs.annotation.SqsListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -65,8 +66,14 @@ public class RespostasListener {
         try {
             tx.executeWithoutResult(status -> tratar(mensagem));
         } catch (RuntimeException e) {
-            log.error("Falha ao tratar {} da saga {} (mensagem {}); volta para a fila: {}",
-                    mensagem.type(), mensagem.sagaId(), mensagem.messageId(), e.toString());
+            // Conflito de versão é corrida esperada: a nova entrega resolve. Outro erro é falha real.
+            if (e instanceof ObjectOptimisticLockingFailureException) {
+                log.warn("Conflito de versão em {} da saga {} (mensagem {}); volta para a fila",
+                        mensagem.type(), mensagem.sagaId(), mensagem.messageId());
+            } else {
+                log.error("Falha ao tratar {} da saga {} (mensagem {}); volta para a fila: {}",
+                        mensagem.type(), mensagem.sagaId(), mensagem.messageId(), e.toString());
+            }
             throw e;
         } finally {
             MDC.remove(CorrelationIdFilter.MDC_CORRELATION_ID);
@@ -75,14 +82,10 @@ public class RespostasListener {
     }
 
     private void tratar(MensagemSaga mensagem) {
-        if (processadas.existsById(mensagem.messageId())) {
+        if (processadas.registrar(mensagem.messageId(), Instant.now()) == 0) {
             log.info("Mensagem {} já processada; ignorada", mensagem.messageId());
             return;
         }
-        MensagemProcessadaData registro = new MensagemProcessadaData();
-        registro.setMessageId(mensagem.messageId());
-        registro.setProcessadaEm(Instant.now());
-        processadas.saveAndFlush(registro);
         Map<String, Object> payload = mensagem.payload() == null || mensagem.payload().isNull()
                 ? Map.of()
                 : mapper.convertValue(mensagem.payload(), new TypeReference<Map<String, Object>>() { });

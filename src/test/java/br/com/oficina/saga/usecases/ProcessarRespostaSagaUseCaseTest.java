@@ -5,7 +5,6 @@ import br.com.oficina.ordemservico.entities.OrdemServico;
 import br.com.oficina.ordemservico.entities.StatusOS;
 import br.com.oficina.ordemservico.gateways.OrdemServicoGateway;
 import br.com.oficina.ordemservico.usecases.NotificadorStatusOrdem;
-import br.com.oficina.peca.entities.Peca;
 import br.com.oficina.peca.gateways.PecaGateway;
 import br.com.oficina.saga.entities.EstadoSaga;
 import br.com.oficina.saga.entities.SagaOrdemServico;
@@ -257,6 +256,24 @@ class ProcessarRespostaSagaUseCaseTest {
     }
 
     @Test
+    void estornoFalhouComPagamentoIdNuloAindaMarcaFalhouELogaErro() {
+        OrdemServico os = os(StatusOS.AGUARDANDO_EXECUCAO, List.of());
+        SagaOrdemServico saga = preparar(EstadoSaga.ESTORNANDO, os);
+        java.util.Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("pagamentoId", null);
+        payload.put("motivo", "Sem pagamento no Billing");
+
+        useCase.execute(resposta(saga, "EstornoFalhou", payload));
+
+        assertThat(saga.getEstado()).isEqualTo(EstadoSaga.FALHOU);
+        assertThat(saga.getMotivoFalha()).isEqualTo("Sem pagamento no Billing");
+        assertThat(logs.list).anySatisfy(e -> {
+            assertThat(e.getLevel()).isEqualTo(Level.ERROR);
+            assertThat(e.getFormattedMessage()).contains("saga.estorno.falhou");
+        });
+    }
+
+    @Test
     void execucaoFinalizadaFinalizaConcluiENotifica() {
         OrdemServico os = os(StatusOS.EM_EXECUCAO, List.of());
         SagaOrdemServico saga = preparar(EstadoSaga.EM_EXECUCAO, os);
@@ -313,12 +330,14 @@ class ProcessarRespostaSagaUseCaseTest {
     }
 
     @Test
-    void payloadInvalidoEmTipoConhecidoEhDescartadoComErroSemMudarNada() {
+    void payloadInvalidoEmTipoConhecidoLogaErroELancaSemMudarNada() {
         OrdemServico os = os(StatusOS.AGUARDANDO_ORCAMENTO, List.of());
         SagaOrdemServico saga = preparar(EstadoSaga.AGUARDANDO_ORCAMENTO, os);
 
-        useCase.execute(resposta(saga, "OrcamentoGerado", Map.of("orcamentoId", "xyz")));
-        useCase.execute(resposta(saga, "OrcamentoGerado", Map.of()));
+        assertThatThrownBy(() -> useCase.execute(resposta(saga, "OrcamentoGerado", Map.of("orcamentoId", "xyz"))))
+                .isInstanceOf(RuntimeException.class).hasMessageContaining("orcamentoId");
+        assertThatThrownBy(() -> useCase.execute(resposta(saga, "OrcamentoGerado", Map.of())))
+                .isInstanceOf(RuntimeException.class).hasMessageContaining("orcamentoId");
 
         assertThat(saga.getEstado()).isEqualTo(EstadoSaga.AGUARDANDO_ORCAMENTO);
         assertThat(os.getStatus()).isEqualTo(StatusOS.AGUARDANDO_ORCAMENTO);
@@ -331,17 +350,16 @@ class ProcessarRespostaSagaUseCaseTest {
     @Test
     void recusaDevolvePecasAoEstoque() {
         UUID pecaId = UUID.randomUUID();
-        Peca peca = Peca.reconstituir(pecaId, "Filtro", null, new BigDecimal("25.00"), 8, true, null, null);
-        when(pecaGateway.findById(pecaId)).thenReturn(Optional.of(peca));
         OrdemServico os = os(StatusOS.AGUARDANDO_APROVACAO,
-                List.of(ItemPeca.novo(pecaId, "Filtro", 2, new BigDecimal("25.00"))));
+                List.of(ItemPeca.novo(pecaId, "Filtro", 2, new BigDecimal("25.00")),
+                        ItemPeca.novo(pecaId, "Filtro", 3, new BigDecimal("25.00"))));
         SagaOrdemServico saga = preparar(EstadoSaga.AGUARDANDO_APROVACAO, os);
         useCase = new ProcessarRespostaSagaUseCase(sagaGateway, ordemServicoGateway, comandos,
                 new DevolverPecasAoEstoque(pecaGateway), notificador, Clock.fixed(AGORA, ZoneOffset.UTC));
 
         useCase.execute(resposta(saga, "OrcamentoRecusado", Map.of("orcamentoId", UUID.randomUUID().toString())));
 
-        assertThat(peca.getQuantidadeEstoque()).isEqualTo(10);
-        verify(pecaGateway).save(peca);
+        verify(pecaGateway).devolverAoEstoque(pecaId, 2);
+        verify(pecaGateway).devolverAoEstoque(pecaId, 3);
     }
 }

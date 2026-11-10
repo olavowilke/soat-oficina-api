@@ -49,23 +49,39 @@ class RespostasListenerIT extends BaseControllerIT {
     @Autowired private RespostasListener listener;
     @Value("${oficina.filas.respostas}") private String filaRespostas;
 
+    /** Loggers cujo ruído esperado o teste captura em vez de imprimir. */
+    private static final List<String> LOGGERS_SILENCIADOS = List.of(
+            RespostasListener.class.getName(),
+            "br.com.oficina.saga.usecases.ProcessarRespostaSagaUseCase",
+            "br.com.oficina.ordemservico.usecases.NotificadorStatusOrdem",
+            "org.hibernate.engine.jdbc.spi.SqlExceptionHelper",
+            "io.awspring.cloud.sqs");
+
     private ListAppender<ILoggingEvent> logs;
-    private Logger logger;
+    private final java.util.Map<Logger, Boolean> aditivos = new java.util.HashMap<>();
 
     @BeforeEach
     void esvaziarFila() throws Exception {
         jdbc.execute("ALTER TABLE saga_ordem_servico DROP CONSTRAINT IF EXISTS ck_teste_rollback");
         String url = sqs.getQueueUrl(r -> r.queueName(filaRespostas)).get().queueUrl();
         sqs.purgeQueue(r -> r.queueUrl(url)).get();
-        logger = (Logger) LoggerFactory.getLogger(RespostasListener.class);
         logs = new ListAppender<>();
         logs.start();
-        logger.addAppender(logs);
+        for (String nome : LOGGERS_SILENCIADOS) {
+            Logger l = (Logger) LoggerFactory.getLogger(nome);
+            aditivos.put(l, l.isAdditive());
+            l.setAdditive(false);
+            l.addAppender(logs);
+        }
     }
 
     @AfterEach
     void depois() {
-        logger.detachAppender(logs);
+        aditivos.forEach((l, aditivo) -> {
+            l.detachAppender(logs);
+            l.setAdditive(aditivo);
+        });
+        aditivos.clear();
     }
 
     private record Cenario(Peca peca, OrdemServico os, SagaOrdemServico saga) {}
@@ -73,6 +89,7 @@ class RespostasListenerIT extends BaseControllerIT {
     /** OS em AGUARDANDO_APROVACAO com 2 unidades de uma peça (estoque já em 8). */
     private Cenario cenarioAguardandoAprovacao() {
         UUID[] ids = inserirClienteEVeiculo();
+        jdbc.update("UPDATE clientes SET email = 'cliente@exemplo.com' WHERE id = ?", ids[0]);
         Peca peca = pecaGateway.save(Peca.novo("Filtro", "Filtro de óleo", new BigDecimal("25.00"), 8));
         OrdemServico os = OrdemServico.reconstituir(UUID.randomUUID(), ids[0], ids[1], StatusOS.AGUARDANDO_APROVACAO,
                 null, List.of(), List.of(ItemPeca.novo(peca.getId(), "Filtro", 2, new BigDecimal("25.00"))),
@@ -142,6 +159,10 @@ class RespostasListenerIT extends BaseControllerIT {
 
         await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> assertThat(processadas()).isEqualTo(1));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM saga_ordem_servico", Integer.class)).isZero();
+        assertThat(logs.list).anySatisfy(e -> {
+            assertThat(e.getLevel()).isEqualTo(Level.WARN);
+            assertThat(e.getFormattedMessage()).contains("saga desconhecida", messageId.toString());
+        });
     }
 
     /**
@@ -155,11 +176,15 @@ class RespostasListenerIT extends BaseControllerIT {
         jdbc.execute("ALTER TABLE saga_ordem_servico ADD CONSTRAINT ck_teste_rollback "
                 + "CHECK (estado <> 'COMPENSADA') NOT VALID");
         try {
-            enviar(envelope(UUID.randomUUID(), c.saga().getId(), c.os().getId(), "OrcamentoRecusado",
+            UUID messageId = UUID.randomUUID();
+            enviar(envelope(messageId, c.saga().getId(), c.os().getId(), "OrcamentoRecusado",
                     Map.of("orcamentoId", UUID.randomUUID().toString())), "OrcamentoRecusado");
 
             await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> assertThat(logs.list)
-                    .anySatisfy(e -> assertThat(e.getLevel()).isEqualTo(Level.ERROR)));
+                    .anySatisfy(e -> {
+                        assertThat(e.getLevel()).isEqualTo(Level.ERROR);
+                        assertThat(e.getFormattedMessage()).contains(messageId.toString());
+                    }));
             // A transação desfez o registro, a baixa da saga e a devolução de estoque.
             assertThat(processadas()).isZero();
             assertThat(estadoSaga(c.saga().getId())).isEqualTo("AGUARDANDO_APROVACAO");
@@ -168,7 +193,7 @@ class RespostasListenerIT extends BaseControllerIT {
             jdbc.execute("ALTER TABLE saga_ordem_servico DROP CONSTRAINT IF EXISTS ck_teste_rollback");
         }
         // A fila reentrega depois do tempo de visibilidade e a segunda tentativa funciona.
-        await().atMost(Duration.ofSeconds(90)).untilAsserted(
+        await().atMost(Duration.ofSeconds(60)).untilAsserted(
                 () -> assertThat(estadoSaga(c.saga().getId())).isEqualTo("COMPENSADA"));
         await().during(Duration.ofSeconds(2)).atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
             assertThat(estoque(c.peca().getId())).isEqualTo(10);
@@ -177,15 +202,21 @@ class RespostasListenerIT extends BaseControllerIT {
     }
 
     @Test
-    void payloadInvalidoEmTipoConhecidoEhConfirmadoSemMudarNada() throws Exception {
+    void payloadInvalidoEmTipoConhecidoLancaENaoMarcaProcessada() throws Exception {
         Cenario c = cenarioAguardandoAprovacao();
         UUID messageId = UUID.randomUUID();
+        String corpo = envelope(messageId, c.saga().getId(), c.os().getId(), "OrcamentoAprovado",
+                Map.of("pagamentoId", "nao-e-uuid", "linkPagamento", "x"));
 
-        listener.receber(envelope(messageId, c.saga().getId(), c.os().getId(), "OrcamentoAprovado",
-                Map.of("pagamentoId", "nao-e-uuid", "linkPagamento", "x")), null);
+        assertThatThrownBy(() -> listener.receber(corpo, null))
+                .hasMessageContaining("pagamentoId");
 
-        assertThat(processadas()).isEqualTo(1);
+        assertThat(processadas()).isZero();
         assertThat(estadoSaga(c.saga().getId())).isEqualTo("AGUARDANDO_APROVACAO");
+        assertThat(logs.list).anySatisfy(e -> {
+            assertThat(e.getLevel()).isEqualTo(Level.ERROR);
+            assertThat(e.getFormattedMessage()).contains("Payload inválido", "pagamentoId");
+        });
     }
 
     @Test
