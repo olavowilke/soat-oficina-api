@@ -13,4 +13,6 @@ public interface SagaJpaRepository extends JpaRepository<SagaData, UUID> {
     Optional<SagaData> findFirstByOsIdAndEstadoIn(UUID osId, Collection<EstadoSaga> estados);
 
     List<SagaData> findByOsIdOrderByCriadoEmAsc(UUID osId);
+
+    long countByEstado(EstadoSaga estado);
 }

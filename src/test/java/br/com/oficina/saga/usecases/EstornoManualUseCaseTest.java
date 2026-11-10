@@ -8,6 +8,7 @@ import br.com.oficina.saga.entities.EstadoSaga;
 import br.com.oficina.saga.entities.EstornoNaoPendenteException;
 import br.com.oficina.saga.entities.SagaOrdemServico;
 import br.com.oficina.saga.gateways.ComandoSagaGateway;
+import br.com.oficina.saga.gateways.MetricasSagaGateway;
 import br.com.oficina.saga.gateways.SagaGateway;
 import br.com.oficina.shared.domain.RecursoNaoEncontradoException;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,13 +43,14 @@ class EstornoManualUseCaseTest {
     @Mock private ComandoSagaGateway comandos;
     @Mock private DevolverPecasAoEstoque devolverPecas;
     @Mock private NotificadorStatusOrdem notificador;
+    @Mock private MetricasSagaGateway metricas;
 
     private EstornoManualUseCase useCase;
 
     @BeforeEach
     void setUp() {
         useCase = new EstornoManualUseCase(sagaGateway, ordemServicoGateway, comandos, devolverPecas, notificador,
-                Clock.fixed(AGORA, ZoneOffset.UTC));
+                metricas, Clock.fixed(AGORA, ZoneOffset.UTC));
     }
 
     private OrdemServico os(StatusOS status) {
@@ -79,7 +81,7 @@ class EstornoManualUseCaseTest {
         assertThat(resultado.getMotivoFalha()).isEqualTo("Gateway fora");
         verify(sagaGateway).salvar(saga);
         verify(comandos).estornarPagamento(any(SagaOrdemServico.class), any(String.class));
-        verifyNoInteractions(devolverPecas, notificador);
+        verifyNoInteractions(devolverPecas, notificador, metricas);
     }
 
     @Test
@@ -96,6 +98,7 @@ class EstornoManualUseCaseTest {
         verify(devolverPecas).execute(os);
         verify(ordemServicoGateway).save(os);
         verify(notificador).notificar(os);
+        verify(metricas).sagaFinalizada(EstadoSaga.COMPENSADA);
         verifyNoInteractions(comandos);
     }
 

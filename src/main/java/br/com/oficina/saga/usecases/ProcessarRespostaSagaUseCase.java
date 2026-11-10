@@ -7,6 +7,7 @@ import br.com.oficina.saga.entities.EstadoSaga;
 import br.com.oficina.saga.entities.EstadoSagaInesperadoException;
 import br.com.oficina.saga.entities.SagaOrdemServico;
 import br.com.oficina.saga.gateways.ComandoSagaGateway;
+import br.com.oficina.saga.gateways.MetricasSagaGateway;
 import br.com.oficina.saga.gateways.SagaGateway;
 import br.com.oficina.shared.domain.RecursoNaoEncontradoException;
 import org.slf4j.Logger;
@@ -36,16 +37,19 @@ public class ProcessarRespostaSagaUseCase {
     private final ComandoSagaGateway comandos;
     private final DevolverPecasAoEstoque devolverPecas;
     private final NotificadorStatusOrdem notificador;
+    private final MetricasSagaGateway metricas;
     private final Clock clock;
 
     public ProcessarRespostaSagaUseCase(SagaGateway sagaGateway, OrdemServicoGateway ordemServicoGateway,
                                         ComandoSagaGateway comandos, DevolverPecasAoEstoque devolverPecas,
-                                        NotificadorStatusOrdem notificador, Clock clock) {
+                                        NotificadorStatusOrdem notificador, MetricasSagaGateway metricas,
+                                        Clock clock) {
         this.sagaGateway = sagaGateway;
         this.ordemServicoGateway = ordemServicoGateway;
         this.comandos = comandos;
         this.devolverPecas = devolverPecas;
         this.notificador = notificador;
+        this.metricas = metricas;
         this.clock = clock;
     }
 
@@ -66,6 +70,9 @@ public class ProcessarRespostaSagaUseCase {
         EstadoSaga estadoAntes = saga.getEstado();
         try {
             aplicar(r, saga, os);
+            if (!saga.getEstado().ativo()) {
+                metricas.sagaFinalizada(saga.getEstado());
+            }
         } catch (EstadoSagaInesperadoException e) {
             if (estadoAntes.antesDe(e.getEsperado())) {
                 // Corrida esperada: a resposta passou a que a antecede. Sem confirmar, o SQS entrega de novo.
