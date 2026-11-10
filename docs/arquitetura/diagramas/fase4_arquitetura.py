@@ -50,18 +50,18 @@ with Diagram(
     with Cluster("Borda AWS"):
         gateway = APIGateway("API Gateway HTTP")
         authorizer = Lambda("Lambda authorizer\n(CPF)")
-        nlb = NLB("VPC link + NLB\nlisteners: existente,\n8081, 8082")
+        nlb = NLB("VPC link + NLB\nlisteners: 80,\n8081, 8082")
 
     with Cluster("Externos"):
         mp = Client("Mercado Pago\n(sandbox)")
         newrelic = NewRelic("New Relic")
 
     with Cluster("EKS (cluster único)"):
-        with Cluster("namespace oficina"):
+        with Cluster("namespace oficina", graph_attr={"margin": "24", "labeljust": "c"}):
             os_svc = Pod("oficina-api (OS)\nNodePort 30080\nSaga orquestradora")
-        with Cluster("namespace billing"):
+        with Cluster("namespace billing", graph_attr={"margin": "24", "labeljust": "c"}):
             billing = Pod("billing\nNodePort 30081")
-        with Cluster("namespace execucao"):
+        with Cluster("namespace execucao", graph_attr={"margin": "24", "labeljust": "c"}):
             execucao = Pod("execution\nNodePort 30082")
 
     with Cluster("Filas SQS (cada uma com DLQ)"):
@@ -81,10 +81,13 @@ with Diagram(
     cliente >> Edge(label="HTTPS") >> gateway
     gateway >> Edge(style="dashed", label="autoriza") >> authorizer
     gateway >> Edge(label="VPC link") >> nlb
-    nlb >> Edge(label=":30080") >> os_svc
+    nlb >> Edge(label=":80 → 30080") >> os_svc
     nlb >> Edge(label=":8081 → 30081") >> billing
     nlb >> Edge(label=":8082 → 30082") >> execucao
-    equipe >> Edge(style="dashed", label="kubectl\nport-forward") >> billing
+    pf = "kubectl port-forward\n(os 3 serviços)"
+    equipe >> Edge(style="dashed", label=pf) >> os_svc
+    equipe >> Edge(style="dashed") >> billing
+    equipe >> Edge(style="dashed") >> execucao
 
     # Saga
     os_svc >> Edge(color=CMD, label="comando") >> q_bill >> Edge(color=CMD) >> billing

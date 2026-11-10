@@ -21,7 +21,10 @@ Não há folga. No ensaio, use o plano de corte no fim.
 - [ ] `kubectl get pods -A` mostra os pods de `oficina`, `billing` e `execucao` em `Running`.
 - [ ] `kubectl` aponta para o cluster de homolog. `jq` está instalado.
 - [ ] Mercado Pago em sandbox. Comprador de teste pronto.
-- [ ] Flag `simulacao-falha` desligada. Confira por port-forward em `GET /api/execucao/admin/simulacao-falha`.
+- [ ] Flag `simulacao-falha` desligada. Envie por port-forward `PUT /api/execucao/admin/simulacao-falha {"ativa":false}`. Não existe `GET` para ela.
+- [ ] `SONAR_TOKEN` e `vars.SONAR_ORGANIZATION` definidos. A organização no SonarCloud existe (passo manual).
+- [ ] `NVD_API_KEY` definido, para o job OWASP.
+- [ ] `main` protegida em todos os repositórios (rulesets existem).
 - [ ] Filas e DLQs vazias. Nenhuma saga presa.
 - [ ] `./scripts/demo-saga.sh feliz` rodou uma vez antes, sem erro.
 - [ ] New Relic aberto em três abas: trace distribuído, dashboard da saga, busca de logs.
@@ -49,7 +52,7 @@ Não há folga. No ensaio, use o plano de corte no fim.
 - O pagamento acontece na aprovação, antes da execução. Billing fala com o Mercado Pago.
 - O New Relic recebe métricas, logs e traces dos três serviços.
 
-**Se falhar:** se a imagem não abrir, use o diagrama do `README.md`. Fale o mesmo texto.
+**Se falhar:** se a imagem não abrir, use o arquivo `docs/arquitetura/fase4-arquitetura.png` direto do repositório. Fale o mesmo texto.
 
 ## Bloco 2 — `demo-saga.sh feliz` com status ao vivo (3:00)
 
@@ -79,7 +82,7 @@ Ele mostra o status da OS e o estado da saga a cada passo.
 
 - Se o port-forward cair, rode o script de novo. Ele recria os túneis.
 - Se o webhook demorar, mostre o link de pagamento. Diga que o sandbox atrasa. Rode o script outra vez.
-- Se a saga travar, mostre o estado com `GET /api/ordens-servico/{id}` e use a gravação do ensaio.
+- Se a saga travar, mostre o estado com `GET /api/ordens-servico/{id}/saga` e use a gravação do ensaio.
 
 ## Bloco 3 — `demo-saga.sh falha-execucao` e compensação (3:00)
 
@@ -121,7 +124,7 @@ Ele roda o fluxo até o pagamento. Execution rejeita o trabalho. No fim, o scrip
 gh pr checks <numero> --repo <org>/<repo-billing> --watch
 gh pr merge <numero> --repo <org>/<repo-billing> --squash
 gh run watch --repo <org>/<repo-billing>
-kubectl -n billing rollout status deploy/billing
+kubectl -n billing rollout status deploy/billing-service
 kubectl -n billing get pods
 ```
 
@@ -130,7 +133,7 @@ Troque `<org>`, `<repo-billing>` e `<numero>` antes de gravar.
 **Falar:**
 
 - A `main` tem proteção. O PR exige CI e Sonar verdes.
-- O CI roda build, testes unitários e de integração, cobertura JaCoCo e OWASP.
+- O CI roda build, testes unitários e de integração, cobertura JaCoCo e Sonar. O OWASP dependency-check roda num job separado, que não é obrigatório.
 - Mostre o gate do SonarCloud aprovado. Cite a cobertura.
 - Mostre que o botão de merge só libera com os checks verdes.
 - Faça o merge. O CD começa sozinho.
@@ -154,9 +157,9 @@ Troque `<org>`, `<repo-billing>` e `<numero>` antes de gravar.
 
 - Abra o trace distribuído. Ele cruza OS, SQS, Billing e Execution.
 - O cabeçalho `newrelic` viaja nos atributos da mensagem. Por isso o trace não quebra na fila.
-- Abra o dashboard da saga: sagas por estado, taxa de compensação, tempo por passo e profundidade das DLQs.
+- Abra o dashboard da saga: "Sagas ativas por estado", "Sagas finalizadas por hora e resultado" (mostra as compensadas), "Mensagens por DLQ" e "Spans por servico".
 - Um alerta vigia a profundidade das DLQs.
-- Abra os logs. Filtre por `sagaId`. Os três serviços aparecem na mesma busca.
+- Abra o painel "Logs com sagaId". Filtre por `sagaId`. Os três serviços aparecem na mesma busca.
 - Os logs são JSON. Cada linha tem `correlationId` e `sagaId`.
 
 **Se falhar:**
