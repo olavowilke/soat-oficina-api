@@ -32,7 +32,8 @@ RUN apk add --no-cache curl unzip \
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
-RUN addgroup -S oficina && adduser -S oficina -G oficina
+# UID/GID fixo: o securityContext do Deployment usa runAsUser: 10001.
+RUN addgroup -S -g 10001 oficina && adduser -S -u 10001 -G oficina oficina
 
 COPY --from=builder /app/target/*.jar app.jar
 COPY --from=newrelic-agent /tmp/newrelic.jar newrelic.jar
