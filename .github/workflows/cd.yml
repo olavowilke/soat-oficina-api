@@ -8,9 +8,11 @@ name: CD - Build image & Deploy (oficina-api)
 # o Dockerfile ja esta na raiz deste repositorio. So ativa depois do split:
 # dentro do monorepo quem roda e o par de workflows da raiz.
 #
+# O job `terraform` cria so a fila de respostas da saga e a role do pod.
+#
 # Publica a imagem da oficina-api no ECR e atualiza a imagem do Deployment ja
 # existente no cluster EKS provisionado por infra-k8s (Tarefa 2/3). Esta
-# pipeline NAO roda Terraform, NAO cria/atualiza o Secret oficina-secrets e
+# pipeline, fora do job `terraform`, NAO cria/atualiza o Secret oficina-secrets e
 # NAO conhece manifestos Kubernetes de nenhum tipo (kustomize, overlays) -
 # isso e tudo responsabilidade de infra-k8s/.github/workflows/cd.yml, que
 # garante que o cluster, o Namespace, o ConfigMap/Secret, o Deployment
@@ -51,7 +53,40 @@ permissions:
   contents: read
 
 jobs:
+  # Fila de respostas da saga e role do pod (Pod Identity). Roda antes do
+  # build: o pod novo precisa da role e da fila ja existentes ao subir.
+  terraform:
+    if: vars.DEPLOY_HOMOLOG == 'true'
+    name: terraform apply (fila da saga + role do pod)
+    runs-on: ubuntu-latest
+    environment: homolog
+    env:
+      AMBIENTE: homolog
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Credenciais AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: terraform init
+        working-directory: terraform
+        run: |
+          terraform init             -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"             -backend-config="key=oficina-api/${AMBIENTE}/terraform.tfstate"             -backend-config="region=${AWS_REGION}"             -backend-config="dynamodb_table=${{ secrets.TF_LOCK_TABLE }}"             -backend-config="encrypt=true"
+
+      - name: terraform apply
+        working-directory: terraform
+        run: terraform apply -input=false -auto-approve -var-file=environments/${AMBIENTE}.tfvars
+
   build-and-deploy:
+    needs: terraform
     if: vars.DEPLOY_HOMOLOG == 'true'
     name: Build & push ECR + kubectl set image
     runs-on: ubuntu-latest
