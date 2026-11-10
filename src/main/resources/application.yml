@@ -20,6 +20,10 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+  cloud:
+    aws:
+      region:
+        static: ${AWS_REGION:us-east-1}
   mail:
     host: ${MAIL_HOST:localhost}
     port: ${MAIL_PORT:1025}
@@ -104,6 +108,15 @@ app:
       # Em produção defina true e configure spring.mail.* (SMTP/SendGrid).
       enabled: ${NOTIFICACAO_EMAIL_ENABLED:false}
       remetente: ${NOTIFICACAO_EMAIL_REMETENTE:nao-responder@oficina.com}
+
+oficina:
+  filas:
+    respostas: ${OFICINA_FILAS_RESPOSTAS:oficina-homolog-os-saga-replies}
+    billing-comandos: ${OFICINA_FILAS_BILLING_COMANDOS:oficina-homolog-billing-commands}
+    execucao-comandos: ${OFICINA_FILAS_EXECUCAO_COMANDOS:oficina-homolog-execution-commands}
+  outbox:
+    # Intervalo entre passadas do OutboxRelay (duração ISO-8601).
+    intervalo: ${OFICINA_OUTBOX_INTERVALO:PT1S}
 
 logging:
   level:
