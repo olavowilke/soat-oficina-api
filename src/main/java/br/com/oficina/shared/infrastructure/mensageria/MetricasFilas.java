@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tags;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -12,12 +13,15 @@ import software.amazon.awssdk.services.sqs.model.GetQueueAttributesRequest;
 import software.amazon.awssdk.services.sqs.model.GetQueueUrlRequest;
 import software.amazon.awssdk.services.sqs.model.QueueAttributeName;
 
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Lê a cada 60 s o tamanho da DLQ deste serviço e expõe
- * {@code oficina_fila_dlq_mensagens{fila}}. Se a leitura falha, mantém o último valor
+ * {@code oficina_fila_dlq_mensagens{fila}}. Cada chamada ao SQS tem prazo (o agendador é compartilhado com a outbox).
+ * Se a leitura falha ou estoura o prazo, mantém o último valor
  * e escreve um WARN por sequência de falhas.
  */
 @Component
@@ -27,14 +31,20 @@ public class MetricasFilas {
 
     private final SqsAsyncClient sqs;
     private final String fila;
+    private final Duration timeout;
     private final AtomicLong mensagens = new AtomicLong();
     private final AtomicBoolean emFalha = new AtomicBoolean();
     private volatile String url;
 
-    public MetricasFilas(SqsAsyncClient sqs, MeterRegistry registry,
-                         @Value("${oficina.filas.respostas-dlq}") String fila) {
+    @Autowired
+    public MetricasFilas(SqsAsyncClient sqs, MeterRegistry registry, @Value("${oficina.filas.respostas-dlq}") String fila) {
+        this(sqs, registry, fila, Duration.ofSeconds(10));
+    }
+
+    MetricasFilas(SqsAsyncClient sqs, MeterRegistry registry, String fila, Duration timeout) {
         this.sqs = sqs;
         this.fila = fila;
+        this.timeout = timeout;
         registry.gauge("oficina.fila.dlq.mensagens", Tags.of("fila", fila), mensagens);
     }
 
@@ -42,16 +52,19 @@ public class MetricasFilas {
     public void atualizar() {
         try {
             if (url == null) {
-                url = sqs.getQueueUrl(GetQueueUrlRequest.builder().queueName(fila).build()).join().queueUrl();
+                url = sqs.getQueueUrl(GetQueueUrlRequest.builder().queueName(fila).build())
+                        .get(timeout.toMillis(), TimeUnit.MILLISECONDS).queueUrl();
             }
             String valor = sqs.getQueueAttributes(GetQueueAttributesRequest.builder()
                             .queueUrl(url)
                             .attributeNames(QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES)
                             .build())
-                    .join().attributes().get(QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES);
+                    .get(timeout.toMillis(), TimeUnit.MILLISECONDS).attributes().get(QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES);
             mensagens.set(Long.parseLong(valor));
             emFalha.set(false);
-        } catch (RuntimeException e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
             if (emFalha.compareAndSet(false, true)) {
                 log.warn("Não foi possível ler o tamanho da DLQ {}; mantém o último valor: {}", fila, e.getMessage());
             }

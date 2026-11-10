@@ -45,6 +45,7 @@ public abstract class BaseControllerIT {
         postgres.start();
         localstack.start();
         for (String fila : new String[]{"oficina-homolog-os-saga-replies",
+                "oficina-homolog-os-saga-replies-dlq",
                 "oficina-homolog-billing-commands", "oficina-homolog-execution-commands"}) {
             try {
                 var r = localstack.execInContainer("awslocal", "sqs", "create-queue", "--queue-name", fila,

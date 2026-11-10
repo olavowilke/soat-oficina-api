@@ -9,6 +9,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Arrays;
 import java.util.EnumMap;
@@ -46,10 +48,25 @@ public class MetricasSaga implements MetricasSagaGateway {
         });
     }
 
+    /**
+     * Dentro de uma transação, conta só depois do commit: rollback (conflito de versão, nova entrega)
+     * não conta. Fora de transação, conta na hora. Uma saga FALHOU que o operador cancela vira
+     * COMPENSADA e conta as duas vezes, de propósito: cada contagem é um resultado que a saga teve.
+     */
     @Override
     public void sagaFinalizada(EstadoSaga estadoFinal) {
         Counter counter = finalizadas.get(estadoFinal);
-        if (counter != null) {
+        if (counter == null) {
+            return;
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    counter.increment();
+                }
+            });
+        } else {
             counter.increment();
         }
     }

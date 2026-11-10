@@ -19,6 +19,9 @@ import software.amazon.awssdk.services.sqs.model.QueueAttributeName;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
+import io.micrometer.prometheusmetrics.PrometheusConfig;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
+import java.time.Duration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -96,5 +99,25 @@ class MetricasFilasTest {
                 .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("sem rede")));
         metricas.atualizar();
         assertThat(logs.list).filteredOn(e -> e.getLevel() == Level.WARN).hasSize(2);
+    }
+
+    @Test
+    void chamadaQueNaoRespondeContaComoFalhaMantemOValorELogaUmWarn() {
+        MetricasFilas lenta = new MetricasFilas(sqs, registry, "fila-lenta", Duration.ofMillis(50));
+        when(sqs.getQueueAttributes(any(GetQueueAttributesRequest.class))).thenReturn(new CompletableFuture<>());
+
+        lenta.atualizar();
+        lenta.atualizar();
+
+        assertThat(registry.get("oficina.fila.dlq.mensagens").tag("fila", "fila-lenta").gauge().value()).isZero();
+        assertThat(logs.list).filteredOn(e -> e.getLevel() == Level.WARN).hasSize(1);
+    }
+
+    @Test
+    void scrapeDoPrometheusExpoeONomeDaMetrica() {
+        PrometheusMeterRegistry prometheus = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+        new MetricasFilas(sqs, prometheus, FILA, Duration.ofSeconds(1));
+
+        assertThat(prometheus.scrape()).contains("oficina_fila_dlq_mensagens{fila=\"" + FILA + "\"");
     }
 }

@@ -11,6 +11,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
+import io.micrometer.prometheusmetrics.PrometheusConfig;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -101,5 +105,45 @@ class MetricasSagaTest {
         assertThat(finalizadas(EstadoSaga.CONCLUIDA)).isZero();
         assertThat(finalizadas(EstadoSaga.COMPENSADA)).isZero();
         assertThat(finalizadas(EstadoSaga.FALHOU)).isZero();
+    }
+
+    @Test
+    void naoContaQuandoATransacaoFazRollback() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            metricas.sagaFinalizada(EstadoSaga.FALHOU);
+            assertThat(finalizadas(EstadoSaga.FALHOU)).isZero();
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(s -> s.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+
+        assertThat(finalizadas(EstadoSaga.FALHOU)).isZero();
+    }
+
+    @Test
+    void contaUmaVezQuandoATransacaoConfirma() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            metricas.sagaFinalizada(EstadoSaga.FALHOU);
+            assertThat(finalizadas(EstadoSaga.FALHOU)).isZero();
+            TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+
+        assertThat(finalizadas(EstadoSaga.FALHOU)).isEqualTo(1.0);
+    }
+
+    @Test
+    void scrapeDoPrometheusExpoeOsNomesDasMetricas() {
+        PrometheusMeterRegistry prometheus = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+        new MetricasSaga(repository, prometheus);
+
+        String scrape = prometheus.scrape();
+
+        assertThat(scrape).contains("oficina_saga_ativas{estado=\"EM_EXECUCAO\"");
+        assertThat(scrape).contains("oficina_saga_finalizadas_total{resultado=\"FALHOU\"");
     }
 }
