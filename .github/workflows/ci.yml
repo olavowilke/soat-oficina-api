@@ -19,6 +19,8 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +36,16 @@ jobs:
 
       - name: Build and run tests
         run: mvn verify --batch-mode --no-transfer-progress -s settings.xml
+
+      - name: Sonar analysis
+        if: env.SONAR_TOKEN != ''
+        run: >
+          mvn sonar:sonar --batch-mode --no-transfer-progress -s settings.xml
+          -Dsonar.qualitygate.wait=true
+          -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
+          -Dsonar.projectKey=olavowilke_soat-oficina-api
+          -Dsonar.host.url=https://sonarcloud.io
+          -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
 
       # Renderiza o overlay de homolog: falha se um patch apontar para um
       # alvo inexistente ou se o YAML gerado for invalido. Fica neste job
