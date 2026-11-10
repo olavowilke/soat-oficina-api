@@ -29,7 +29,9 @@ seu banco, então a consistência vem de uma Saga com compensação.
 - Nenhum serviço lê ou grava o banco de outro.
 - A Lambda de autenticação continua a ler `clientes` no banco da OS. Ela não é um serviço de negócio.
 - O OS Service mantém o nome `soat-oficina-api`. Isso evita quebrar ECR, SSM e pipelines.
-- Os quatro repositórios da Fase 3 continuam. Entram `soat-billing-service` e `soat-execution-service`, num total de seis.
+- Dois repositórios novos entram: `soat-billing-service` e `soat-execution-service`.
+- Os manifestos da OS saíram de `soat-infra-k8s` e agora vivem em `soat-oficina-api/k8s`.
+- Cada serviço novo guarda os próprios manifestos, o Terraform e o CD.
 
 ### Saga orquestrada
 
@@ -51,6 +53,7 @@ Por isso a compensação de uma execução rejeitada inclui o estorno.
 ### Gateway
 
 Cada serviço novo cria no seu Terraform o listener do NLB, o alvo e as rotas do API Gateway.
+
 As rotas do cliente passam pelo authorizer de CPF. Saúde, Swagger e webhook são públicos.
 A equipe usa `kubectl port-forward` para rotas de staff, como na Fase 3.
 
@@ -77,7 +80,7 @@ A equipe usa `kubectl port-forward` para rotas de staff, como na Fase 3.
 ## Limites conhecidos
 
 - **Orçamento `GERADO` não expira.** Se o cliente não responde, a saga fica em `AGUARDANDO_APROVACAO`. A equipe recusa o orçamento no Billing por `kubectl port-forward`.
-- **O link do Mercado Pago não expira.** O Billing cancela o pagamento após o prazo (`BILLING_PAGAMENTO_PRAZO`, 30 minutos). Se o cliente paga depois, o Billing estorna sozinho e grava em `estornos_avulsos`.
+- **O link do Mercado Pago não expira.** O Billing cancela o pagamento após o prazo (`BILLING_PAGAMENTO_PRAZO`). O padrão é 30 minutos e o homolog usa 2 minutos. Se o cliente paga depois, o Billing estorna sozinho e grava em `estornos_avulsos`.
 - **Estorno que falha.** Se o estorno de uma compensação falha depois de 3 entregas, a saga vai para `FALHOU`. A OS fica `AGUARDANDO_EXECUCAO` e um ADMIN age (ver README, seção Operação).
 - **Estorno tardio que falha.** O Billing audita a falha em `estornos_avulsos` e responde erro ao webhook. O Mercado Pago repete o aviso. Se a falha continuar, um operador estorna no painel do Mercado Pago.
 - **Mensagem na DLQ.** Um alerta do New Relic avisa. O reprocessamento é manual.

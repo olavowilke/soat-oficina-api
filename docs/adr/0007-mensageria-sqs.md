@@ -43,9 +43,10 @@ Os atributos SQS `type`, `correlationId` e `newrelic` repetem os dados de rastre
 ### Estorno e contador de entregas
 
 O comando `EstornarPagamento` usa o `ApproximateReceiveCount` do SQS.
-Se o provedor recusa o estorno antes da 3ª entrega, o Billing não responde e a fila entrega de novo.
-Na 3ª entrega, o Billing publica `EstornoFalhou`. Assim a mensagem não vai para a DLQ sem resposta à saga.
-`BILLING_ESTORNO_MAX_ENTREGAS` precisa ser igual ao `maxReceiveCount` da fila.
+
+- Se o provedor recusa o estorno antes da 3ª entrega, o Billing não responde. A fila entrega de novo.
+- Na 3ª entrega, o Billing publica `EstornoFalhou`. Assim a mensagem não vai para a DLQ sem resposta à Saga.
+- `BILLING_ESTORNO_MAX_ENTREGAS` precisa ser igual ao `maxReceiveCount` da fila.
 
 ### Rastreio
 

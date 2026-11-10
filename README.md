@@ -1,20 +1,21 @@
 # oficina-api
 
-OS Service do Tech Challenge FIAP PosTech (SOAT), Fases 3 e 4. Na Fase 4 ele
-é um de três microsserviços (ver a seção "Fase 4" abaixo). Faz parte do Sistema
-Integrado de Atendimento e Execução de Serviços para oficina mecânica: cadastro de clientes/veículos/serviços/peças, abertura e
-acompanhamento de Ordens de Serviço e notificação por e-mail — em **Clean Architecture**, publicado como imagem
-Docker e implantado no cluster **EKS** provisionado por `infra-k8s`.
+OS Service do Tech Challenge FIAP PosTech (SOAT), Fases 3 e 4.
+Na Fase 4 ele é um de três microsserviços (ver a seção "Fase 4" abaixo).
+
+Ele faz parte do Sistema Integrado de Atendimento e Execução de Serviços para oficina mecânica.
+Cobre o cadastro de clientes, veículos, serviços e peças, a abertura e o acompanhamento de Ordens de Serviço e o aviso por e-mail.
+O código segue **Clean Architecture**. A imagem Docker roda no cluster **EKS** de `infra-k8s`.
 
 ## Propósito
 
-Este repositório contém a aplicação de negócio propriamente dita: a API
-REST que o cliente final acessa (via o API Gateway de `lambda-auth`) para
-consultar o andamento da sua OS, e que a oficina usa para conduzir todo o
-fluxo de atendimento — do cadastro do cliente à entrega do veículo. É o
-repositório de negócio da Fase 3 e, na Fase 4, o orquestrador da Saga. Sua pipeline
-roda o Terraform da fila da saga e da role do pod, publica a imagem no ECR e
-aplica os manifestos de `k8s/` no cluster.
+Este repositório contém a API REST de negócio.
+O cliente final a acessa pelo API Gateway de `lambda-auth` para ver o andamento da OS.
+A oficina a usa para conduzir o atendimento, do cadastro do cliente à entrega do veículo.
+
+Na Fase 4 ele também orquestra a Saga.
+Sua pipeline roda o Terraform da fila da Saga e da role do pod.
+Depois ela publica a imagem no ECR e aplica os manifestos de `k8s/` no cluster.
 
 ## Fase 4 — Microsserviços e Saga
 
@@ -62,9 +63,12 @@ O pagamento acontece antes da execução.
 | 5 | Execution aceita o serviço | `ExecucaoAceita` | `EM_EXECUCAO` | `EM_EXECUCAO` |
 | 6 | Mecânico leva a execução até `CONCLUIDA` | `ExecucaoFinalizada` | `CONCLUIDA` | `FINALIZADA` |
 
-`ENTREGUE` continua uma ação manual. `PATCH /ordens-servico/{id}/status` só aceita
-`RECEBIDA → EM_DIAGNOSTICO` e `FINALIZADA → ENTREGUE`. Qualquer outra transição responde 409.
-Os estados finais da Saga são `CONCLUIDA`, `COMPENSADA` e `FALHOU`. `ESTORNANDO` é um estado intermediário.
+`ENTREGUE` continua uma ação manual.
+`PATCH /ordens-servico/{id}/status` só aceita `RECEBIDA → EM_DIAGNOSTICO` e `FINALIZADA → ENTREGUE`.
+Qualquer outra transição responde 409.
+
+Os estados finais da Saga são `CONCLUIDA`, `COMPENSADA` e `FALHOU`.
+`ESTORNANDO` é um estado intermediário.
 
 ### Compensação
 
@@ -115,10 +119,16 @@ scripts/demo-saga.sh expira           # pagamento vence: OS CANCELADA
 
 ### Qualidade e CI
 
-- O CI roda `mvn verify`: testes unitários, integração com Testcontainers (Postgres e LocalStack), ArchUnit e JaCoCo com mínimo de 80% de linhas.
+- O CI roda `mvn verify`: testes unitários, integração com Testcontainers (Postgres e LocalStack) e ArchUnit.
+- O JaCoCo exige 80% de linhas no conjunto.
+- Última medição (`./mvnw verify` na branch `feat/fase4-metricas`): **93% das linhas (1.938 de 2.093)** e 90% das instruções.
+- Relatório local: `target/site/jacoco/index.html`, depois de `./mvnw verify`.
+
+![Relatório JaCoCo do OS Service](docs/cobertura/jacoco.png)
+
 - O BDD (Cucumber) cobre o fluxo completo, a recusa do orçamento, a execução rejeitada com estorno e o pagamento expirado. O arquivo é [`saga_ordem_servico.feature`](src/test/resources/features/saga_ordem_servico.feature).
 - O job `owasp` roda o `dependency-check` e precisa do secret `NVD_API_KEY`. Sem a chave, o job é pulado.
-- A análise Sonar do OS Service ainda não está no CI. Os dois serviços novos já têm.
+- O CI também roda a análise Sonar, com o gate de qualidade. Ela precisa de `SONAR_TOKEN` e `SONAR_ORGANIZATION`.
 - O deploy fica atrás da variável `DEPLOY_HOMOLOG=true`.
 
 ## Tecnologias
@@ -254,6 +264,8 @@ Com a aplicação rodando:
 - **Via API Gateway (homolog):** `https://<api_endpoint>/api/swagger-ui.html`
 - **Billing Service:** `https://<api_endpoint>/api/billing/swagger-ui/index.html`
 - **Execution Service:** `https://<api_endpoint>/api/execucao/swagger-ui/index.html`
+
+As rotas de equipe (staff) não passam pelo gateway. O botão "Try it out" só funciona nelas por port-forward.
 
 A especificação OpenAPI é a fonte da coleção e pode ser importada direto no
 Postman/Insomnia (*Import → Link*) a partir do OpenAPI JSON acima.

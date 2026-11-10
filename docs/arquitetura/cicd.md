@@ -14,14 +14,14 @@ Só existe o ambiente `homolog`. Um push em `main` implanta em homolog quando a 
 | `soat-infra-k8s` | `cd.yml` | `push` em `main` ou `workflow_dispatch` | `terraform apply`: VPC, EKS, NLB, ECR, add-ons e New Relic |
 | `soat-infra-database` | `ci.yml` | `push` e `pull_request` | `terraform fmt` e `validate` |
 | `soat-infra-database` | `cd.yml` | `push` em `main` ou `workflow_dispatch` | `terraform apply`: RDS, Secrets Manager e SSM |
-| `soat-oficina-api` | `ci.yml` | `push` e `pull_request` | `mvn verify` (JUnit, Testcontainers, ArchUnit, JaCoCo 80%), validação do kustomize, job `owasp` e `terraform fmt`/`validate` |
+| `soat-oficina-api` | `ci.yml` | `push` e `pull_request` | `mvn verify` (JUnit, Testcontainers, ArchUnit, JaCoCo 80%), validação do kustomize, Sonar, job `owasp` e `terraform fmt`/`validate` |
 | `soat-oficina-api` | `cd.yml` | `push` em `main` ou `workflow_dispatch` | `terraform apply` (fila de respostas e role do pod), build e push da imagem, `kubectl apply` dos manifestos, `rollout status` e teste de saúde pelo gateway |
 | `soat-billing-service` | `ci.yml` | `push` e `pull_request` | `mvn verify` (JaCoCo 80%), kustomize, Sonar, job `owasp` e `terraform fmt`/`validate` |
 | `soat-billing-service` | `cd.yml` | `push` em `main` ou `workflow_dispatch` | `terraform apply` (fila, RDS, ECR, rotas do gateway), imagem, `kubectl apply`, `rollout status` e teste de saúde |
 | `soat-execution-service` | `ci.yml` | `push` e `pull_request` | `mvn verify` (JaCoCo 80%), Sonar, job `owasp`, `terraform fmt`/`validate` e kustomize |
 | `soat-execution-service` | `cd.yml` | `push` em `main` ou `workflow_dispatch` | `terraform apply` (fila, DynamoDB, ECR, rotas do gateway), imagem, `kubectl apply`, `rollout status` e teste de saúde |
 
-> O CI do `soat-oficina-api` ainda não tem o passo Sonar. Os dois serviços novos têm.
+> O CI dos três serviços Java tem o passo Sonar e o job `owasp`.
 > O Sonar e o `owasp` só rodam quando existem `SONAR_TOKEN` e `NVD_API_KEY`. Sem a chave, o passo é pulado com um aviso.
 
 ## Dono dos manifestos Kubernetes
@@ -81,7 +81,8 @@ não gera um estado inconsistente, só um erro de "parameter not found" no
 Cada repositório protege a branch `main` com o ruleset `protecao-main`:
 
 - PR obrigatório para chegar em `main`, sem push direto. O ruleset pede zero aprovações.
-- Todos os checks de CI do repositório são obrigatórios e estritos. O PR precisa estar atualizado com `main`.
+- O check `build-and-test` é obrigatório e estrito. O PR precisa estar atualizado com `main`.
+- Os jobs `owasp` e `Terraform fmt e validate` são informativos. Eles rodam, mas não bloqueiam o merge.
 - Force-push e exclusão da branch ficam bloqueados.
 - Nenhum *bypass* existe.
 
@@ -105,8 +106,8 @@ Configurados no GitHub, no repositório ou no Environment `homolog`.
 | `UPTIME_CHECK_URL` | Variable | `infra-k8s` | URL do monitor sintético. Só existe depois do primeiro apply de `lambda-auth` |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Secrets | `oficina-api` | Login de ADMIN do Secret `oficina-secrets` |
 | `MAIL_USERNAME`, `MAIL_PASSWORD` | Secrets | `oficina-api` | Credenciais SMTP do e-mail de status |
-| `SONAR_TOKEN` | Secret | `billing-service`, `execution-service` | Token do SonarCloud. Sem ele, o passo Sonar é pulado |
-| `SONAR_ORGANIZATION` | Variable | `billing-service`, `execution-service` | Organização do SonarCloud |
+| `SONAR_TOKEN` | Secret | `oficina-api`, `billing-service`, `execution-service` | Token do SonarCloud. Sem ele, o passo Sonar é pulado |
+| `SONAR_ORGANIZATION` | Variable | `oficina-api`, `billing-service`, `execution-service` | Organização do SonarCloud |
 | `NVD_API_KEY` | Secret | `oficina-api`, `billing-service`, `execution-service` | Chave da base NVD para o job `owasp`. Sem ela, o job é pulado |
 
 O Mercado Pago do Billing não usa secret do GitHub. O Terraform cria o segredo
