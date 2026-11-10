@@ -24,6 +24,14 @@ spring:
     aws:
       region:
         static: ${AWS_REGION:us-east-1}
+      # Credenciais vazias = cadeia padrão do SDK (Pod Identity em produção).
+      # Local: o compose define AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY falsas.
+      credentials:
+        access-key: ${AWS_ACCESS_KEY_ID:}
+        secret-key: ${AWS_SECRET_ACCESS_KEY:}
+      sqs:
+        # Vazio = endpoint padrão da AWS. Local: http://localhost:4566 (LocalStack).
+        endpoint: ${SPRING_CLOUD_AWS_SQS_ENDPOINT:}
   mail:
     host: ${MAIL_HOST:localhost}
     port: ${MAIL_PORT:1025}

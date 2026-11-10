@@ -30,7 +30,7 @@ aplica os manifestos de `k8s/` no cluster.
 | Documentação | SpringDoc OpenAPI / Swagger UI |
 | Observabilidade | Agente Java New Relic + Micrometer (métricas de negócio) + logs JSON com correlação |
 | Testes | JUnit 5 + Mockito + Testcontainers + ArchUnit |
-| Cobertura | JaCoCo (mínimo 80% nos domínios críticos) |
+| Cobertura | JaCoCo (mínimo 80% de linhas no bundle) |
 | Container | Docker (multi-stage, usuário não-root, healthcheck) |
 | Orquestração | Kubernetes (EKS, via `infra-k8s`) + HPA |
 | CI/CD | GitHub Actions (build, testes, imagem no ECR, rollout no EKS) |
@@ -75,11 +75,20 @@ para a visão completa dos 4 repositórios juntos.
 ### Rodando
 
 ```bash
-docker compose up -d db          # só o banco
+docker compose up -d db localstack   # banco e SQS local (as filas e DLQs nascem sozinhas)
+SPRING_CLOUD_AWS_SQS_ENDPOINT=http://localhost:4566 \
+AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
 ./mvnw -s settings.xml spring-boot:run
-# ou, tudo via compose:
+# ou, tudo via compose (já define o endpoint e as credenciais falsas):
 docker compose up --build
 ```
+
+O LocalStack cria `oficina-homolog-os-saga-replies`, `oficina-homolog-billing-commands` e
+`oficina-homolog-execution-commands`, cada uma com DLQ (`-dlq`, redrive após 3 recebimentos).
+O script fica em [`docker/localstack/init-sqs.sh`](docker/localstack/init-sqs.sh).
+Billing e Execution não rodam neste compose: para ver a saga andar, envie as respostas
+com `aws --endpoint-url http://localhost:4566 sqs send-message`.
+Sem `SPRING_CLOUD_AWS_SQS_ENDPOINT`, o cliente usa a AWS real e as credenciais do Pod Identity.
 
 A API estará disponível em `http://localhost:8080/api`. Variáveis de
 ambiente completas (banco, JWT, e-mail) e o passo a passo de
@@ -155,7 +164,6 @@ O `cd.yml` precisa dos secrets e variables abaixo. O `ci.yml` não precisa de ne
 | `NEW_RELIC_LICENSE_KEY` | Secret | O Secret sobe com valor vazio. O agente New Relic não liga |
 | `DEPLOY_HOMOLOG` | Variable | Precisa ser `true`. Com outro valor, nenhum job de deploy roda |
 | `AWS_REGION` | Variable | Opcional. Sem ela, a pipeline usa `us-east-1` |
-| `ANTHROPIC_API_KEY` | Secret | Só o workflow `claude-review.yml` usa. Sem ele, a revisão automática de PR não roda |
 
 A role `AWS_DEPLOY_ROLE_ARN` precisa de três grupos de permissão. O primeiro é
 o que `infra-k8s` já exige. O segundo é o do Terraform deste repositório (SQS,
@@ -163,6 +171,15 @@ IAM e Pod Identity da oficina-api). O terceiro é o de ECR (`ecr:GetAuthorizatio
 `ecr:BatchCheckLayerAvailability`, `ecr:PutImage`, `ecr:InitiateLayerUpload`,
 `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`). Ver
 [`infra-k8s/README.md`](https://github.com/olavowilke/soat-infra-k8s/blob/main/README.md#pipelines-githubworkflows).
+
+## Operação
+
+- **Aprovação abandonada.** Se o cliente não responde ao orçamento, a saga fica em `AGUARDANDO_APROVACAO`. A equipe recusa o orçamento no Billing por `kubectl port-forward`. O Billing manda `OrcamentoRecusado`, e a OS é cancelada.
+- **Estorno falhou.** A saga fica `FALHOU` e a OS fica `AGUARDANDO_EXECUCAO`. Só um ADMIN age:
+  - `POST /api/ordens-servico/{id}/saga/estorno` pede o estorno de novo (202).
+  - `POST /api/ordens-servico/{id}/saga/cancelar-apos-estorno-manual` devolve as peças, cancela a OS e compensa a saga (200). Use depois de estornar fora do sistema.
+  - Os dois devolvem 409 se o último estorno da OS não falhou.
+- **DLQs.** Cada fila tem uma DLQ com o sufixo `-dlq` (`oficina-homolog-os-saga-replies-dlq` e as outras). Uma mensagem vai para lá depois de 3 recebimentos sem sucesso. O alerta de DLQ avisa o operador.
 
 ## Justificativa do banco de dados
 

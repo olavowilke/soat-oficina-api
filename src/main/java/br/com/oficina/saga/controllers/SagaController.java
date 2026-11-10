@@ -2,6 +2,7 @@ package br.com.oficina.saga.controllers;
 
 import br.com.oficina.saga.presenters.SagaPresenter;
 import br.com.oficina.saga.presenters.SagaResponse;
+import br.com.oficina.saga.usecases.EstornoManualUseCase;
 import br.com.oficina.saga.usecases.IniciarSagaUseCase;
 import br.com.oficina.saga.usecases.ListarSagasDaOsUseCase;
 import br.com.oficina.shared.domain.ApiError;
@@ -27,12 +28,15 @@ import java.util.UUID;
 public class SagaController {
 
     private final IniciarSagaUseCase iniciarSaga;
+    private final EstornoManualUseCase estornoManual;
     private final ListarSagasDaOsUseCase listarSagas;
     private final SagaPresenter presenter;
 
-    public SagaController(IniciarSagaUseCase iniciarSaga, ListarSagasDaOsUseCase listarSagas,
+    public SagaController(IniciarSagaUseCase iniciarSaga, EstornoManualUseCase estornoManual,
+                          ListarSagasDaOsUseCase listarSagas,
                           SagaPresenter presenter) {
         this.iniciarSaga = iniciarSaga;
+        this.estornoManual = estornoManual;
         this.listarSagas = listarSagas;
         this.presenter = presenter;
     }
@@ -70,5 +74,43 @@ public class SagaController {
     @GetMapping("/ordens-servico/{id}/saga")
     public ResponseEntity<List<SagaResponse>> listar(@PathVariable UUID id) {
         return ResponseEntity.ok(presenter.present(listarSagas.execute(id)));
+    }
+
+    @Operation(summary = "Reenviar estorno (ADMIN)",
+            description = "Só quando o último estorno da OS falhou. Volta a saga para ESTORNANDO e pede o estorno de novo.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "202", description = "Estorno pedido de novo",
+                    content = @Content(schema = @Schema(implementation = SagaResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Não autenticado",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (só ADMIN)",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "404", description = "OS não encontrada",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "409", description = "A OS não tem estorno falho",
+                    content = @Content(schema = @Schema(implementation = ApiError.class)))
+    })
+    @PostMapping("/ordens-servico/{id}/saga/estorno")
+    public ResponseEntity<SagaResponse> reenviarEstorno(@PathVariable UUID id) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(presenter.present(estornoManual.reenviarEstorno(id)));
+    }
+
+    @Operation(summary = "Cancelar a OS depois de estorno manual (ADMIN)",
+            description = "Só quando o último estorno da OS falhou. Devolve as peças ao estoque, cancela a OS e compensa a saga.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OS cancelada, saga compensada",
+                    content = @Content(schema = @Schema(implementation = SagaResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Não autenticado",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (só ADMIN)",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "404", description = "OS não encontrada",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "409", description = "A OS não tem estorno falho",
+                    content = @Content(schema = @Schema(implementation = ApiError.class)))
+    })
+    @PostMapping("/ordens-servico/{id}/saga/cancelar-apos-estorno-manual")
+    public ResponseEntity<SagaResponse> cancelarAposEstornoManual(@PathVariable UUID id) {
+        return ResponseEntity.ok(presenter.present(estornoManual.cancelarAposEstornoManual(id)));
     }
 }

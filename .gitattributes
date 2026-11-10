@@ -1,0 +1,3 @@
+# Scripts montados em containers Linux precisam de LF.
+*.sh text eol=lf
+docker/localstack/* text eol=lf

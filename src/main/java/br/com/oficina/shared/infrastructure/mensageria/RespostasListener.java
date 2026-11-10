@@ -1,6 +1,7 @@
 package br.com.oficina.shared.infrastructure.mensageria;
 
 import br.com.oficina.saga.usecases.ProcessarRespostaSagaUseCase;
+import br.com.oficina.saga.usecases.RespostaAdiantadaException;
 import br.com.oficina.saga.usecases.RespostaSaga;
 import br.com.oficina.shared.infrastructure.CorrelationIdFilter;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -67,6 +68,10 @@ public class RespostasListener {
             tx.executeWithoutResult(status -> tratar(mensagem));
         } catch (RuntimeException e) {
             // Conflito de versão é corrida esperada: a nova entrega resolve. Outro erro é falha real.
+            if (e instanceof RespostaAdiantadaException) {
+                // O caso de uso já logou o WARN. Resposta adiantada é redelivery esperada, não erro.
+                throw e;
+            }
             if (e instanceof ObjectOptimisticLockingFailureException) {
                 log.warn("Conflito de versão em {} da saga {} (mensagem {}); volta para a fila",
                         mensagem.type(), mensagem.sagaId(), mensagem.messageId());

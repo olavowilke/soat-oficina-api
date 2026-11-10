@@ -55,6 +55,9 @@ public class SagaOrdemServico {
         this.atualizadoEm = agora;
     }
 
+    /** FALHOU com pagamento: o estorno falhou (a falha de orçamento acontece antes do pagamento). */
+    public boolean estornoFalhou() { return estado == EstadoSaga.FALHOU && pagamentoId != null; }
+
     public void definirOrcamentoId(UUID orcamentoId) { this.orcamentoId = orcamentoId; }
     public void definirPagamentoId(UUID pagamentoId) { this.pagamentoId = pagamentoId; }
     public void definirExecucaoId(UUID execucaoId) { this.execucaoId = execucaoId; }

@@ -21,7 +21,9 @@ import java.util.UUID;
 
 /**
  * Orquestrador da saga. Cada resposta move a saga de um estado esperado para o
- * novo e muda a OS na mesma transação. Em outro estado, a resposta só gera um WARN.
+ * novo e muda a OS na mesma transação. Se a saga já passou do estado esperado (resposta
+ * atrasada ou duplicada), só gera um WARN. Se ainda não chegou lá (resposta adiantada),
+ * lança {@link RespostaAdiantadaException} para a mensagem voltar à fila.
  */
 @Service
 public class ProcessarRespostaSagaUseCase {
@@ -56,11 +58,22 @@ public class ProcessarRespostaSagaUseCase {
         }
         OrdemServico os = ordemServicoGateway.findById(saga.getOsId())
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Ordem de Serviço", saga.getOsId()));
+        if (r.osId() != null && !r.osId().equals(saga.getOsId())) {
+            log.warn("Resposta {} ({}) cita a OS {}, mas a saga {} é da OS {}; ignorada",
+                    r.messageId(), r.type(), r.osId(), saga.getId(), saga.getOsId());
+            return;
+        }
         EstadoSaga estadoAntes = saga.getEstado();
         try {
             aplicar(r, saga, os);
         } catch (EstadoSagaInesperadoException e) {
-            log.warn("Resposta {} fora de ordem: saga {} em {}; sem mudança ({})",
+            if (estadoAntes.antesDe(e.getEsperado())) {
+                // Corrida esperada: a resposta passou a que a antecede. Sem confirmar, o SQS entrega de novo.
+                log.warn("Resposta {} adiantada: saga {} em {}, espera {}; volta para a fila",
+                        r.type(), saga.getId(), estadoAntes, e.getEsperado());
+                throw new RespostaAdiantadaException(saga.getId(), r.type(), estadoAntes, e.getEsperado());
+            }
+            log.warn("Resposta {} atrasada ou duplicada: saga {} em {}; sem mudança ({})",
                     r.type(), saga.getId(), estadoAntes, e.getMessage());
         } catch (PayloadInvalidoException e) {
             // A mensagem não é confirmada: vai para a DLQ depois das tentativas, e o alerta de DLQ avisa o operador.

@@ -99,6 +99,8 @@ public class SecurityConfig {
                         .requestMatchers("/ordens-servico/*/pecas/**").hasAnyRole("ADMIN", "MECANICO")
                         .requestMatchers("/ordens-servico/*/status").hasAnyRole("ADMIN", "MECANICO")
                         .requestMatchers("/ordens-servico/*/enviar-orcamento").hasAnyRole("ADMIN", "MECANICO")
+                        .requestMatchers("/ordens-servico/*/saga/estorno").hasRole("ADMIN")
+                        .requestMatchers("/ordens-servico/*/saga/cancelar-apos-estorno-manual").hasRole("ADMIN")
                         .requestMatchers("/ordens-servico/*/saga").hasAnyRole("ADMIN", "MECANICO")
                         .requestMatchers(HttpMethod.POST, "/ordens-servico").hasAnyRole("ADMIN", "MECANICO")
                         // Listagem sem filtro devolve a oficina inteira: só operador.

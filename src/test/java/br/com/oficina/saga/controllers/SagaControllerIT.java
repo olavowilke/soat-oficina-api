@@ -10,6 +10,8 @@ import br.com.oficina.ordemservico.controllers.CriarOrdemServicoRequest;
 import br.com.oficina.ordemservico.entities.StatusOS;
 import br.com.oficina.ordemservico.presenters.OrdemServicoResponse;
 import br.com.oficina.saga.entities.EstadoSaga;
+import br.com.oficina.saga.entities.SagaOrdemServico;
+import br.com.oficina.saga.gateways.SagaGateway;
 import br.com.oficina.saga.presenters.SagaResponse;
 import br.com.oficina.servico.controllers.CadastrarServicoRequest;
 import br.com.oficina.servico.presenters.ServicoResponse;
@@ -27,6 +29,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -44,6 +47,8 @@ class SagaControllerIT extends BaseControllerIT {
     private JdbcTemplate jdbc;
     @Autowired
     private JwtService jwtService;
+    @Autowired
+    private SagaGateway sagaGateway;
 
     private UUID clienteId;
     private UUID veiculoId;
@@ -158,5 +163,88 @@ class SagaControllerIT extends BaseControllerIT {
 
         assertThat(post.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(get.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    // --- Estorno manual (ADMIN) ---
+
+    private UUID osComEstornoFalho() {
+        UUID osId = osEmDiagnostico(true);
+        jdbc.update("UPDATE ordens_servico SET status = 'AGUARDANDO_EXECUCAO' WHERE id = ?", osId);
+        SagaOrdemServico saga = SagaOrdemServico.iniciar(osId, Instant.now());
+        saga.definirPagamentoId(UUID.randomUUID());
+        saga.mover(EstadoSaga.AGUARDANDO_ORCAMENTO, EstadoSaga.FALHOU, Instant.now());
+        saga.definirMotivoFalha("Gateway fora");
+        sagaGateway.salvar(saga);
+        return osId;
+    }
+
+    private HttpEntity<Void> comRole(String role) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(jwtService.generateToken("52998224725", role));
+        return new HttpEntity<>(headers);
+    }
+
+    @Test
+    void reenviarEstornoVoltaParaEstornandoEGravaComandoNaOutbox() {
+        UUID osId = osComEstornoFalho();
+
+        ResponseEntity<SagaResponse> response = authPost("/ordens-servico/" + osId + "/saga/estorno", null,
+                SagaResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        assertThat(response.getBody().estado()).isEqualTo(EstadoSaga.ESTORNANDO);
+        assertThat(jdbc.queryForObject("SELECT estado FROM saga_ordem_servico WHERE os_id = ?", String.class, osId))
+                .isEqualTo("ESTORNANDO");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox WHERE os_id = ? AND tipo = 'EstornarPagamento'",
+                Integer.class, osId)).isEqualTo(1);
+        assertThat(authPost("/ordens-servico/" + osId + "/saga/estorno", null, Object.class).getStatusCode())
+                .isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    void cancelarAposEstornoManualCancelaAOsECompensaASaga() {
+        UUID osId = osComEstornoFalho();
+
+        ResponseEntity<SagaResponse> response = authPost(
+                "/ordens-servico/" + osId + "/saga/cancelar-apos-estorno-manual", null, SagaResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().estado()).isEqualTo(EstadoSaga.COMPENSADA);
+        assertThat(response.getBody().motivoFalha()).isEqualTo("Gateway fora");
+        assertThat(authGet("/ordens-servico/" + osId, OrdemServicoResponse.class).getBody().status())
+                .isEqualTo(StatusOS.CANCELADA);
+        assertThat(authPost("/ordens-servico/" + osId + "/saga/cancelar-apos-estorno-manual", null, Object.class)
+                .getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    void estornoManualSemFalhaDeEstornoRetorna409() {
+        UUID osId = osEmDiagnostico(true);
+        enviar(osId);
+
+        assertThat(authPost("/ordens-servico/" + osId + "/saga/estorno", null, Object.class).getStatusCode())
+                .isEqualTo(HttpStatus.CONFLICT);
+        assertThat(authPost("/ordens-servico/" + osId + "/saga/cancelar-apos-estorno-manual", null, Object.class)
+                .getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    void estornoManualEmOsInexistenteRetorna404() {
+        assertThat(authPost("/ordens-servico/" + UUID.randomUUID() + "/saga/estorno", null, Object.class)
+                .getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void soAdminFazEstornoManual() {
+        UUID osId = osComEstornoFalho();
+
+        for (String role : new String[]{"MECANICO", "CLIENTE"}) {
+            assertThat(restTemplate.exchange("/ordens-servico/" + osId + "/saga/estorno", HttpMethod.POST,
+                    comRole(role), Object.class).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(restTemplate.exchange("/ordens-servico/" + osId + "/saga/cancelar-apos-estorno-manual",
+                    HttpMethod.POST, comRole(role), Object.class).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        }
+        assertThat(jdbc.queryForObject("SELECT estado FROM saga_ordem_servico WHERE os_id = ?", String.class, osId))
+                .isEqualTo("FALHOU");
     }
 }

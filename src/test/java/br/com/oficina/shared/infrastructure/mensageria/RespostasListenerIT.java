@@ -9,6 +9,7 @@ import br.com.oficina.peca.gateways.PecaGateway;
 import br.com.oficina.saga.entities.EstadoSaga;
 import br.com.oficina.saga.entities.SagaOrdemServico;
 import br.com.oficina.saga.gateways.SagaGateway;
+import br.com.oficina.saga.usecases.RespostaAdiantadaException;
 import br.com.oficina.shared.BaseControllerIT;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -235,5 +236,26 @@ class RespostasListenerIT extends BaseControllerIT {
 
         assertThat(processadas()).isZero();
         assertThat(logs.list).anySatisfy(e -> assertThat(e.getLevel()).isEqualTo(Level.ERROR));
+    }
+
+    @Test
+    void respostaAdiantadaNaoEhConfirmadaENemMarcadaProcessadaESegueDepoisQueASagaAvanca() throws Exception {
+        Cenario c = cenarioAguardandoAprovacao();
+        String corpo = envelope(UUID.randomUUID(), c.saga().getId(), c.os().getId(), "PagamentoConfirmado", Map.of());
+
+        assertThatThrownBy(() -> listener.receber(corpo, null)).isInstanceOf(RespostaAdiantadaException.class);
+
+        assertThat(processadas()).isZero();
+        assertThat(estadoSaga(c.saga().getId())).isEqualTo("AGUARDANDO_APROVACAO");
+        assertThat(logs.list).anySatisfy(e -> assertThat(e.getLevel()).isEqualTo(Level.WARN));
+        assertThat(logs.list).noneMatch(e -> e.getLevel() == Level.ERROR);
+
+        // A saga alcança o estado esperado; a nova entrega aplica a resposta.
+        jdbc.update("UPDATE saga_ordem_servico SET estado = 'AGUARDANDO_PAGAMENTO' WHERE id = ?", c.saga().getId());
+        jdbc.update("UPDATE ordens_servico SET status = 'AGUARDANDO_PAGAMENTO' WHERE id = ?", c.os().getId());
+        listener.receber(corpo, null);
+
+        assertThat(estadoSaga(c.saga().getId())).isEqualTo("AGUARDANDO_EXECUCAO");
+        assertThat(processadas()).isEqualTo(1);
     }
 }

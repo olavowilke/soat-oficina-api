@@ -289,11 +289,12 @@ class ProcessarRespostaSagaUseCaseTest {
     }
 
     @Test
-    void respostaForaDeOrdemNaoMudaNada() {
+    void respostaAdiantadaLancaErroParaARedeliveryEMantemTudo() {
         OrdemServico os = os(StatusOS.AGUARDANDO_APROVACAO, List.of());
         SagaOrdemServico saga = preparar(EstadoSaga.AGUARDANDO_APROVACAO, os);
 
-        useCase.execute(resposta(saga, "PagamentoConfirmado", Map.of()));
+        assertThatThrownBy(() -> useCase.execute(resposta(saga, "PagamentoConfirmado", Map.of())))
+                .isInstanceOf(RespostaAdiantadaException.class);
 
         assertThat(saga.getEstado()).isEqualTo(EstadoSaga.AGUARDANDO_APROVACAO);
         assertThat(os.getStatus()).isEqualTo(StatusOS.AGUARDANDO_APROVACAO);
@@ -304,6 +305,65 @@ class ProcessarRespostaSagaUseCaseTest {
             assertThat(e.getLevel()).isEqualTo(Level.WARN);
             assertThat(e.getFormattedMessage()).contains(saga.getId().toString(), "PagamentoConfirmado",
                     "AGUARDANDO_APROVACAO");
+        });
+        assertThat(logs.list).noneMatch(e -> e.getLevel() == Level.ERROR);
+    }
+
+    @Test
+    void respostaTardiaComSagaAdianteEhConfirmadaComAviso() {
+        OrdemServico os = os(StatusOS.AGUARDANDO_PAGAMENTO, List.of());
+        SagaOrdemServico saga = preparar(EstadoSaga.AGUARDANDO_PAGAMENTO, os);
+
+        useCase.execute(resposta(saga, "OrcamentoGerado", Map.of("orcamentoId", UUID.randomUUID().toString())));
+
+        assertThat(saga.getEstado()).isEqualTo(EstadoSaga.AGUARDANDO_PAGAMENTO);
+        verify(sagaGateway, never()).salvar(any());
+        verifyNoInteractions(comandos, devolverPecas, notificador);
+        assertThat(logs.list).anySatisfy(e -> {
+            assertThat(e.getLevel()).isEqualTo(Level.WARN);
+            assertThat(e.getFormattedMessage()).contains("OrcamentoGerado", "AGUARDANDO_PAGAMENTO");
+        });
+    }
+
+    @Test
+    void respostaDuplicadaEmEstadoTerminalEhConfirmadaComAviso() {
+        OrdemServico os = os(StatusOS.FINALIZADA, List.of());
+        SagaOrdemServico saga = preparar(EstadoSaga.CONCLUIDA, os);
+
+        useCase.execute(resposta(saga, "ExecucaoFinalizada", Map.of()));
+
+        assertThat(saga.getEstado()).isEqualTo(EstadoSaga.CONCLUIDA);
+        verify(sagaGateway, never()).salvar(any());
+        assertThat(logs.list).anySatisfy(e -> assertThat(e.getLevel()).isEqualTo(Level.WARN));
+    }
+
+    @Test
+    void respostaDeEstornoComSagaEmExecucaoNaoEhAdiantada() {
+        OrdemServico os = os(StatusOS.EM_EXECUCAO, List.of());
+        SagaOrdemServico saga = preparar(EstadoSaga.EM_EXECUCAO, os);
+
+        useCase.execute(resposta(saga, "PagamentoEstornado", Map.of()));
+
+        assertThat(saga.getEstado()).isEqualTo(EstadoSaga.EM_EXECUCAO);
+        verify(sagaGateway, never()).salvar(any());
+    }
+
+    @Test
+    void osIdDiferenteDoDaSagaEhIgnoradoComAviso() {
+        OrdemServico os = os(StatusOS.AGUARDANDO_ORCAMENTO, List.of());
+        SagaOrdemServico saga = preparar(EstadoSaga.AGUARDANDO_ORCAMENTO, os);
+        UUID outraOs = UUID.randomUUID();
+
+        useCase.execute(new RespostaSaga(UUID.randomUUID(), saga.getId(), outraOs, "OrcamentoGerado",
+                Map.of("orcamentoId", UUID.randomUUID().toString())));
+
+        assertThat(saga.getEstado()).isEqualTo(EstadoSaga.AGUARDANDO_ORCAMENTO);
+        verify(sagaGateway, never()).salvar(any());
+        verify(ordemServicoGateway, never()).save(any());
+        verifyNoInteractions(comandos, devolverPecas, notificador);
+        assertThat(logs.list).anySatisfy(e -> {
+            assertThat(e.getLevel()).isEqualTo(Level.WARN);
+            assertThat(e.getFormattedMessage()).contains(saga.getId().toString(), outraOs.toString());
         });
     }
 
