@@ -1,7 +1,8 @@
 # ADR 0002 — Comunicação síncrona REST via API Gateway (sem fila neste momento)
 
-- **Status:** Aceito
+- **Status:** Substituída pela [ADR-0006](0006-microsservicos-e-saga-orquestrada.md)
 - **Data:** 2026-08-25
+- **Nota (Fase 4):** o fluxo crítico da OS agora usa mensagens SQS e uma Saga. Ver [ADR-0007](0007-mensageria-sqs.md). A entrada do cliente continua síncrona pelo API Gateway.
 - **Contexto:** Tech Challenge — Fase 3
 - **Referências:** [RFC-002](../rfc/002-api-gateway.md), `lambda-auth/terraform/apigateway.tf`, `infra-k8s/terraform/nlb.tf`
 

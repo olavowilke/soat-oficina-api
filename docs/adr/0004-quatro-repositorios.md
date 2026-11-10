@@ -1,7 +1,8 @@
 # ADR 0004 — Quatro repositórios (lambda-auth, infra-k8s, infra-database, oficina-api)
 
-- **Status:** Aceito
+- **Status:** Substituída pela [ADR-0006](0006-microsservicos-e-saga-orquestrada.md)
 - **Data:** 2026-08-25
+- **Nota (Fase 4):** a ADR-0006 mantém estes quatro repositórios e soma `soat-billing-service` e `soat-execution-service`. Os manifestos da `oficina-api` agora vivem em `soat-oficina-api/k8s`.
 - **Contexto:** Tech Challenge — Fase 3
 - **Referências:** `design-docs/tech-challenge-3/PLANEJAMENTO-FASE-3.md` (seção "Mapa dos 4 repositórios"), `docs/adr/0005-contrato-entre-stacks-via-ssm.md`
 
@@ -30,9 +31,9 @@ Organizar o sistema em **4 repositórios**, um por responsabilidade:
 | # | Repositório (diretório hoje) | Conteúdo | Pipeline |
 |---|---|---|---|
 | 1 | `lambda-auth` | Function serverless de autenticação por CPF, Lambda Authorizer, Terraform da própria função | `ci`: typecheck + testes + build do bundle + `terraform validate` · `cd`: `terraform apply` (homolog/prod) |
-| 2 | `infra-k8s` | Terraform de VPC, EKS, API Gateway (rotas + VPC Link), addons (metrics-server, New Relic) e manifestos Kubernetes (kustomize) | `ci`: `terraform fmt`/`validate` + validação dos overlays kustomize · `cd`: `apply` + `kubectl apply -k` |
+| 2 | `infra-k8s` | Terraform de VPC, EKS, NLB, ECR, addons (metrics-server, New Relic) e dashboard e alertas do New Relic. Na Fase 3 também tinha os manifestos Kubernetes. Na Fase 4 eles saíram para `soat-oficina-api/k8s` | `ci`: `terraform fmt`/`validate` · `cd`: `terraform apply` |
 | 3 | `infra-database` | Terraform do RDS PostgreSQL, Secrets Manager, e a documentação do modelo de dados (ER + justificativa) | `ci`: `terraform fmt`/`validate` · `cd`: `apply` |
-| 4 | `oficina-api` | Aplicação Spring Boot (Clean Architecture), observabilidade, métricas de negócio | `ci`: `mvn verify` + JaCoCo · `cd`: build de imagem → ECR → `kubectl set image` no `Deployment` já existente (não roda kustomize nem conhece manifestos de outro repositório — `infra-k8s` é quem aplica e é dono do estado desejado deles) |
+| 4 | `oficina-api` | Aplicação Spring Boot (Clean Architecture), observabilidade, métricas de negócio | `ci`: `mvn verify` + JaCoCo · `cd`: `terraform apply` (fila e role do pod), imagem → ECR e `kubectl apply` dos manifestos de `k8s/` (o repositório é dono deles desde a Fase 4) |
 
 Cada repositório é dono de um único domínio de infraestrutura ou aplicação
 e publica/consome contrato apenas via SSM Parameter Store (ADR-0005), nunca

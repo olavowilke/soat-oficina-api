@@ -1,5 +1,7 @@
 # Diagramas de sequência
 
+As seções a) e b) descrevem a Fase 3 e continuam válidas. A seção c) descreve o fluxo da Fase 4.
+
 ## a) Autenticação por CPF
 
 `POST /auth/token` é a única rota pública que emite credencial. A Lambda
@@ -105,17 +107,17 @@ sequenceDiagram
     end
 
     rect rgb(255, 245, 230)
-    Note over Cliente,NR: 2) Mudança de status subsequente (ex.: RECEBIDA -> EM_DIAGNOSTICO -> ... -> AGUARDANDO_APROVACAO)
+    Note over Cliente,NR: 2) Mudança manual de status (RECEBIDA -> EM_DIAGNOSTICO ou FINALIZADA -> ENTREGUE)
     Cliente->>GW: PATCH /api/ordens-servico/{id}/status (Bearer JWT)
     GW->>NLB: HTTP_PROXY via VPC Link (autorização conforme acima)
     NLB->>API: encaminha para o Service oficina-api
-    API->>API: AvancarStatusUseCase — valida transição permitida, atualiza status
+    API->>API: AvancarStatusUseCase — aceita só transição manual; as da Saga voltam 409
     API->>DB: UPDATE ordens_servico
     DB-->>API: status atualizado
     API->>NR: Micrometer timer oficina.ordens.tempo.status{status=anterior}
     API->>API: NotificadorStatusOrdem.notificar (status no conjunto notificável?)
 
-    alt status notificável (AGUARDANDO_APROVACAO, EM_EXECUCAO, FINALIZADA, ENTREGUE, CANCELADA) e e-mail habilitado
+    alt status notificável (ENTREGUE, por exemplo) e e-mail habilitado
         API->>SMTP: envia e-mail de atualização (JavaMailSender)
         alt envio ok
             SMTP-->>API: ok
@@ -147,3 +149,71 @@ Notas:
 - Uma falha ao persistir (não ao notificar) incrementa
   `oficina.ordens.falhas`, consumida pela condição de alerta
   `falha_processamento_os` (`infra-k8s/terraform/newrelic.tf`).
+
+## c) Saga da OS (Fase 4)
+
+Este fluxo substitui o antigo `POST /ordens-servico/{id}/aprovar-orcamento` e o webhook de orçamento.
+A OS não aprova mais por um endpoint próprio. O OS Service orquestra a Saga por filas SQS.
+`PATCH /status` aceita só `RECEBIDA → EM_DIAGNOSTICO` e `FINALIZADA → ENTREGUE`.
+Todas as outras transições pertencem à Saga.
+
+```mermaid
+sequenceDiagram
+    actor Mec as Mecânico (port-forward)
+    actor Cli as Cliente (API Gateway)
+    participant OS as OS Service
+    participant BQ as billing-commands
+    participant B as Billing Service
+    participant R as os-saga-replies
+    participant EQ as execution-commands
+    participant E as Execution Service
+    participant MP as Mercado Pago
+
+    Mec->>OS: POST /ordens-servico/{id}/enviar-orcamento
+    OS->>OS: OS AGUARDANDO_ORCAMENTO, saga criada, outbox
+    OS->>BQ: GerarOrcamento (itens da OS)
+    BQ->>B: entrega
+    B->>R: OrcamentoGerado
+    R->>OS: saga AGUARDANDO_APROVACAO, OS AGUARDANDO_APROVACAO, e-mail ao cliente
+
+    alt cliente recusa
+        Cli->>B: POST /api/billing/orcamentos/{id}/recusar
+        B->>R: OrcamentoRecusado
+        R->>OS: devolve peças ao estoque, OS CANCELADA, saga COMPENSADA
+    else cliente aprova
+        Cli->>B: POST /api/billing/orcamentos/{id}/aprovar
+        B->>MP: cria preferência de pagamento
+        B->>R: OrcamentoAprovado (linkPagamento)
+        R->>OS: saga AGUARDANDO_PAGAMENTO, OS AGUARDANDO_PAGAMENTO, e-mail com o link
+        Cli->>MP: paga pelo link
+        MP->>B: webhook em /api/billing/public/webhooks/mercadopago
+        B->>MP: relê o pagamento na API
+        alt pagamento aprovado
+            B->>R: PagamentoConfirmado
+            R->>OS: saga AGUARDANDO_EXECUCAO, OS AGUARDANDO_EXECUCAO
+            OS->>EQ: IniciarExecucao
+            EQ->>E: entrega
+            alt execução aceita
+                E->>R: ExecucaoAceita
+                R->>OS: saga EM_EXECUCAO, OS EM_EXECUCAO
+                Mec->>E: POST /api/execucao/ordens/{osId}/etapa até CONCLUIDA
+                E->>R: ExecucaoFinalizada
+                R->>OS: saga CONCLUIDA, OS FINALIZADA, e-mail ao cliente
+            else execução rejeitada
+                E->>R: ExecucaoRejeitada
+                R->>OS: saga ESTORNANDO
+                OS->>BQ: EstornarPagamento
+                B->>MP: estorna
+                B->>R: PagamentoEstornado
+                R->>OS: devolve peças, OS CANCELADA, saga COMPENSADA
+            end
+        else pagamento rejeitado ou expirado
+            B->>R: PagamentoFalhou
+            R->>OS: devolve peças, OS CANCELADA, saga COMPENSADA
+        end
+    end
+```
+
+Se `GerarOrcamento` é inválido (sem itens ou total zero), o Billing responde `OrcamentoFalhou`.
+O OS Service volta a OS para `EM_DIAGNOSTICO` e a saga vai para `FALHOU`.
+O README tem a tabela de estados e a de compensação.

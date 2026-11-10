@@ -2,8 +2,9 @@
 
 - **Status:** Aceito
 - **Data:** 2026-08-25
+- **Nota (Fase 4):** os manifestos (`k8s/`) agora vivem neste repositório, `soat-oficina-api`. O cluster e o `terraform/addons.tf` continuam em `soat-infra-k8s`. Na Fase 4 só o ambiente `homolog` existe, então o overlay `prod` citado abaixo é histórico.
 - **Contexto:** Tech Challenge — Fase 3
-- **Referências:** `infra-k8s/k8s/base/hpa.yaml`, `infra-k8s/k8s/overlays/*/kustomization.yaml`, `infra-k8s/terraform/addons.tf`
+- **Referências:** `k8s/base/hpa.yaml`, `k8s/overlays/*/kustomization.yaml`, `infra-k8s/terraform/addons.tf`
 
 ## Contexto
 
@@ -25,12 +26,12 @@ O `base/hpa.yaml` define uma faixa padrão (`minReplicas: 2`,
 `maxReplicas: 6`), mas nenhum dos dois ambientes usa esse padrão sem
 ajuste — os dois overlays o sobrescrevem via patch JSON:
 
-- `homolog` (`infra-k8s/k8s/overlays/homolog/kustomization.yaml`) reduz
+- `homolog` (`k8s/overlays/homolog/kustomization.yaml`) reduz
   para **1–3**. Faz sentido porque o `Deployment` em homolog já roda com
   `replicas: 1` (patch no mesmo overlay) — homolog não precisa de alta
   disponibilidade, só de um ambiente estável para validar antes do deploy
   em prod, então o piso do HPA acompanha o piso do Deployment.
-- `prod` (`infra-k8s/k8s/overlays/prod/kustomization.yaml`) aumenta para
+- `prod` (`k8s/overlays/prod/kustomization.yaml`) aumenta para
   **2–6**. O `Deployment` em prod roda com `replicas: 2` como piso — duas
   réplicas sobrevivem à perda de uma delas (ou de um nó, com o
   `topologySpreadConstraints` do base) sem cair a zero — e o teto (6,
@@ -50,7 +51,7 @@ O HPA depende do **metrics-server**, instalado como *addon* Helm
 (`infra-k8s/terraform/addons.tf`, `helm_release.metrics_server`) — sem ele,
 o HPA não tem de onde ler `cpu`/`memory` de uso corrente dos pods. Os
 `resources.requests` de CPU/memória são obrigatórios no
-`Deployment` (`infra-k8s/k8s/base/deployment.yaml`) porque o HPA calcula
+`Deployment` (`k8s/base/deployment.yaml`) porque o HPA calcula
 utilização como percentual do *request*, não do *limit*.
 
 ## Consequências
@@ -111,7 +112,7 @@ utilização como percentual do *request*, não do *limit*.
     ficariam presas em `Pending` indefinidamente (sem Cluster Autoscaler
     para provisionar mais nós), sem nenhum erro visível fora de
     `kubectl get pods`/`kubectl describe hpa`. `maxReplicas` foi reduzido
-    para **6** (`infra-k8s/k8s/overlays/prod/kustomization.yaml`) para
+    para **6** (`k8s/overlays/prod/kustomization.yaml`) para
     bater com essa capacidade real.
   - Para elevar esse teto de verdade no futuro: aumentar `node_max_size`
     **e** instalar o Cluster Autoscaler (hoje ausente), ou usar um tipo de

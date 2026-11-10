@@ -1,4 +1,7 @@
-"""Caminho da requisição até a oficina-api na AWS.
+"""Caminho da requisição até a oficina-api na AWS (Fase 3, histórico).
+
+Mostra o webhook de orçamento da Fase 3. Na Fase 4 a aprovação passa pelo Billing
+e pela Saga. O desenho atual está em docs/arquitetura/fase4-arquitetura.png.
 
 Gera caminho-requisicao-aws.png ao lado deste arquivo.
 Uso: python docs/arquitetura/diagramas/caminho-requisicao-aws.py
