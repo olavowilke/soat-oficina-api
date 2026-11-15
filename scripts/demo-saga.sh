@@ -70,7 +70,8 @@ fi
 [[ -n "${ADMIN_PASSWORD:-}" ]] || erro "defina ADMIN_PASSWORD"
 
 if [[ -z "${API:-}" ]]; then
-  API="$(aws ssm get-parameter --region "${AWS_REGION:-us-east-1}" \
+  # MSYS2_ARG_CONV_EXCL: o Git Bash no Windows trocaria /oficina/... por um caminho de disco.
+  API="$(MSYS2_ARG_CONV_EXCL="*" aws ssm get-parameter --region "${AWS_REGION:-us-east-1}" \
     --name /oficina/homolog/gateway/endpoint \
     --query Parameter.Value --output text)" \
     || ambiente_incompleto "nao li o SSM /oficina/homolog/gateway/endpoint (aws logado? informe API)"
