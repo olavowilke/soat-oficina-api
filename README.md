@@ -247,7 +247,7 @@ Gateway no SSM (publicados por `infra-k8s` e `lambda-auth`). Ele cria o Secret
 
 > **Nota de organização do monorepo:** enquanto os 4 repositórios convivem
 > como diretórios deste monorepo (antes do split — ver
-> [`scripts/split-repos.sh`](https://github.com/olavowilke/tech-challenge-1/blob/main/scripts/split-repos.sh)),
+> `scripts/split-repos.sh`),
 > esta pipeline roda a partir de `.github/workflows/` na **raiz** do
 > monorepo (`working-directory`/`context` apontando para `oficina-api/`).
 > `oficina-api/.github/workflows/` já existe dentro deste diretório, com o
@@ -332,12 +332,12 @@ repositório (funcionam a partir de qualquer um dos quatro):
 | [`docs/arquitetura/cicd.md`](https://github.com/olavowilke/soat-oficina-api/blob/main/docs/arquitetura/cicd.md) | Pipelines, ordem de apply e secrets/variables de todos os repositórios |
 | [`docs/adr/`](https://github.com/olavowilke/soat-oficina-api/tree/main/docs/adr) | Decisões de arquitetura (Clean Architecture, HPA, contrato via SSM e, na Fase 4, microsserviços e Saga, SQS e DynamoDB). As ADRs 0002 e 0004 foram substituídas pela 0006 |
 | [`docs/rfc/`](https://github.com/olavowilke/soat-oficina-api/tree/main/docs/rfc) | RFCs (nuvem, API Gateway, autenticação, banco de dados) |
-| [`design-docs/tech-challenge-2/PLANEJAMENTO-FASE-2.md`](https://github.com/olavowilke/tech-challenge-1/blob/main/design-docs/tech-challenge-2/PLANEJAMENTO-FASE-2.md) | Planejamento da Fase 2 (permanece no monorepo original, não faz parte do split) |
+| `design-docs/tech-challenge-2/PLANEJAMENTO-FASE-2.md` | Planejamento da Fase 2 (permanece no monorepo original, não faz parte do split) |
 | [Board Miro — Documentação DDD](https://miro.com/app/board/uXjVOXA0ID4=/) | Event Storming, Context Map, Agregados e Linguagem Ubíqua |
 
 > **Nota de organização do monorepo:** enquanto os 4 repositórios convivem
 > como diretórios deste monorepo (antes do split — ver
-> [`scripts/split-repos.sh`](https://github.com/olavowilke/tech-challenge-1/blob/main/scripts/split-repos.sh)),
+> `scripts/split-repos.sh`),
 > `docs/` vive na raiz do monorepo, um nível acima de `oficina-api/`. O
 > script de split copia `docs/adr`, `docs/rfc` e `docs/arquitetura` para a
 > raiz do repositório publicado — os workflows da aplicação **não**
