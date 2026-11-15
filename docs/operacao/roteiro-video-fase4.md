@@ -124,14 +124,14 @@ Ele roda o fluxo até o pagamento. Execution rejeita o trabalho. No fim, o scrip
 **Comandos:**
 
 ```bash
-gh pr checks <numero> --repo <org>/<repo-billing> --watch
-gh pr merge <numero> --repo <org>/<repo-billing> --squash
-gh run watch --repo <org>/<repo-billing>
+gh pr checks 3 --repo olavowilke/soat-billing-service --watch
+gh pr merge 3 --repo olavowilke/soat-billing-service --squash
+gh run watch --repo olavowilke/soat-billing-service
 kubectl -n billing rollout status deploy/billing-service
 kubectl -n billing get pods
 ```
 
-Troque `<org>`, `<repo-billing>` e `<numero>` antes de gravar.
+O PR é o [#3 do Billing](https://github.com/olavowilke/soat-billing-service/pull/3). Não faça o merge antes de gravar.
 
 **Falar:**
 
