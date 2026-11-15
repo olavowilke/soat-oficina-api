@@ -30,11 +30,31 @@ Não há folga. No ensaio, use o plano de corte no fim.
 - [ ] `main` protegida em todos os repositórios (rulesets existem).
 - [ ] Filas e DLQs vazias. Nenhuma saga presa.
 - [ ] `./scripts/demo-saga.sh feliz` rodou uma vez antes, sem erro.
-- [ ] New Relic aberto em três abas: trace distribuído, dashboard da saga, busca de logs.
+- [ ] New Relic aberto nas abas da seção "Abas para abrir antes de gravar".
 - [ ] Um PR preparado no Billing. Mudança pequena, como uma mensagem de log. CI verde em teste prévio.
-- [ ] Abas abertas: PR no GitHub, SonarCloud, Actions e `docs/arquitetura/fase4-arquitetura.png`.
+- [ ] Abas abertas: todas as da seção "Abas para abrir antes de gravar".
 - [ ] Terminal com fonte grande. Notificações do sistema desligadas.
 - [ ] Segredos fora da tela: tokens, chaves AWS, credenciais do Mercado Pago.
+
+## Abas para abrir antes de gravar
+
+Abra as abas nesta ordem. Assim a ordem das abas segue a ordem dos blocos.
+
+| Bloco | Página | Link |
+|---|---|---|
+| 1 | Diagrama da arquitetura | https://github.com/olavowilke/soat-oficina-api/blob/main/docs/arquitetura/fase4-arquitetura.png |
+| 4 | PR do Billing | https://github.com/olavowilke/soat-billing-service/pull/3 |
+| 4 | Gate do Sonar no PR | https://sonarcloud.io/summary/new_code?id=olavowilke_soat-billing-service&pullRequest=3 |
+| 4 | Actions do Billing (CD) | https://github.com/olavowilke/soat-billing-service/actions |
+| 5 | Trace distribuído | https://one.newrelic.com/distributed-tracing?account=8499367 |
+| 5 | Dashboard "Oficina - Saga" | https://one.newrelic.com/dashboards/detail/ODQ5OTM2N3xWSVp8REFTSEJPQVJEfGRhOjEzNDk3MDUw?account=8499367 |
+| 5 | Busca de logs | https://one.newrelic.com/logger?account=8499367 |
+| 5 | Alertas (DLQ) | https://one.newrelic.com/alerts?account=8499367 |
+| 6 | Repositórios | https://github.com/olavowilke?tab=repositories&q=soat |
+
+O dashboard "Oficina - Saga" tem as abas "Logs por sagaId" e "Traces distribuidos". Elas servem de reserva se a busca de logs ou o trace demorarem.
+
+Faça login no GitHub, no SonarCloud e no New Relic antes de gravar.
 
 ## Bloco 1 — Arquitetura e escolha da Saga (2:00)
 
