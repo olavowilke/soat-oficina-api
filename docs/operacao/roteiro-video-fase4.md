@@ -62,18 +62,35 @@ Faça login no GitHub, no SonarCloud e no New Relic antes de gravar.
 
 **Comandos:** nenhum.
 
-**Falar:**
+**Texto para ler:**
 
-- São três serviços: OS (`oficina-api`), Billing e Execution. Cada um tem repositório e banco próprios.
-- OS usa RDS Postgres. Billing usa outro RDS Postgres. Execution usa DynamoDB.
-- O cliente entra pelo API Gateway. A Lambda valida o CPF. O VPC link leva ao NLB.
-- O NLB tem três listeners, um por serviço. Os pods rodam no EKS, em três namespaces.
-- Os serviços falam por SQS. São três filas, cada uma com DLQ.
-- Escolhemos Saga orquestrada. O OS já é dono da OS e do status.
-- Coreografia espalharia a lógica do fluxo por três repositórios.
-- Todo passo que pode falhar tem compensação.
-- O pagamento acontece na aprovação, antes da execução. Billing cobra pelo Mercado Pago. No homolog, usa o adaptador fake.
-- O New Relic recebe métricas, logs e traces dos três serviços.
+Olá. Este é o vídeo da Fase 4 do Tech Challenge.
+
+Esta é a arquitetura da Fase 4. Dividimos a oficina em três serviços: OS, Billing e Execution.
+
+*(Aponte os três pods.)*
+
+Cada serviço tem o próprio repositório e o próprio banco. A OS usa um RDS Postgres. O Billing usa outro RDS Postgres, e o Execution usa DynamoDB.
+
+*(Aponte a entrada.)*
+
+O cliente entra pelo API Gateway. Uma Lambda valida o CPF do cliente. Um VPC link leva a chamada até um NLB.
+
+O NLB tem três listeners, um por serviço. Os pods rodam num único cluster EKS, em três namespaces.
+
+*(Aponte as filas.)*
+
+Os serviços conversam por SQS. São três filas, e cada uma tem a sua DLQ.
+
+Para coordenar o fluxo, escolhemos uma Saga orquestrada. A OS já era dona da ordem de serviço e do status, então ela orquestra. Com coreografia, a lógica do fluxo ficaria espalhada por três repositórios.
+
+Todo passo que pode falhar tem uma compensação.
+
+O pagamento acontece na aprovação do orçamento, antes da execução. O Billing cobra pelo Mercado Pago. No homolog, ele usa um adaptador fake.
+
+*(Aponte o New Relic.)*
+
+Por fim, os três serviços mandam métricas, logs e traces para o New Relic.
 
 **Se falhar:** se a imagem não abrir, use o arquivo `docs/arquitetura/fase4-arquitetura.png` direto do repositório. Fale o mesmo texto.
 
@@ -90,16 +107,29 @@ Faça login no GitHub, no SonarCloud e no New Relic antes de gravar.
 O script abre os port-forwards, faz login de admin, cria a OS e roda o fluxo.
 Ele mostra o status da OS e o estado da saga a cada passo.
 
-**Falar:**
+**Texto para ler:**
 
-- O script abre port-forward para os três serviços. A equipe interna não passa pelo gateway.
-- Ele cria a OS e envia o orçamento. A saga começa em `AGUARDANDO_ORCAMENTO`.
-- Billing gera o orçamento. A OS vai para `AGUARDANDO_APROVACAO`.
-- O cliente aprova. Billing cria o pagamento. A OS vai para `AGUARDANDO_PAGAMENTO`.
-- A página de pagamento fake aprova, e o Billing confirma. O modo real usa o sandbox do Mercado Pago e o webhook.
-- A OS vai para `AGUARDANDO_EXECUCAO` e depois `EM_EXECUCAO`.
-- O mecânico avança as etapas. A OS termina em `FINALIZADA`. A saga termina em `CONCLUIDA`.
-- Mostre o fim da saída: OS `FINALIZADA`, saga `CONCLUIDA`.
+Agora vamos rodar o caminho feliz da saga.
+
+*(Rode o comando. Fale enquanto a saída aparece.)*
+
+O script abre um port-forward para cada serviço. A equipe interna fala direto com os pods, sem passar pelo gateway.
+
+Primeiro, o admin faz login e cria a ordem de serviço. Em seguida, ele envia a OS para orçamento, e a saga começa.
+
+O Billing gera o orçamento, e a OS passa para aguardando aprovação.
+
+O cliente aprova o orçamento pelo gateway, com o token do CPF. O Billing cria o pagamento, e a OS passa para aguardando pagamento.
+
+A página de pagamento fake aprova, e o Billing confirma o pagamento. Com o Mercado Pago real, essa confirmação chega por webhook.
+
+A OS passa para aguardando execução e, logo depois, para em execução.
+
+O mecânico avança as etapas: em reparo, em teste e concluída.
+
+*(Mostre o fim da saída.)*
+
+No fim, a OS está finalizada, e a saga está concluída. O estoque da peça caiu de 10 para 8, porque a OS usou duas peças.
 
 **Se falhar:**
 
@@ -120,16 +150,29 @@ Ele mostra o status da OS e o estado da saga a cada passo.
 O script liga a flag com `PUT /api/execucao/admin/simulacao-falha {"ativa":true}`.
 Ele roda o fluxo até o pagamento. Execution rejeita o trabalho. No fim, o script desliga a flag.
 
-**Falar:**
+**Texto para ler:**
 
-- Ligamos a flag de falha no Execution. Ela rejeita só o próximo trabalho.
-- O cliente aprova e paga, como no bloco anterior.
-- Execution responde `ExecucaoRejeitada`, com motivo `SIMULACAO`.
-- O OS começa a compensação. A saga vai para `ESTORNANDO`.
-- Billing estorna o pagamento pelo adaptador fake. Responde `PagamentoEstornado`.
-- O OS devolve as peças ao estoque. A OS fica `CANCELADA`. A saga fica `COMPENSADA`.
-- Mostre o estoque antes e depois. Ele volta ao valor inicial.
-- A flag volta a ficar desligada. Cada passo da compensação é idempotente.
+Agora vamos ver o que acontece quando um passo falha.
+
+*(Rode o comando.)*
+
+O script liga uma flag de falha no Execution. A flag rejeita só o próximo trabalho.
+
+O cliente aprova e paga, como no caminho feliz.
+
+Quando o comando chega, o Execution rejeita o trabalho com o motivo simulação.
+
+A OS recebe a rejeição e começa a compensação. A saga passa para estornando.
+
+O Billing estorna o pagamento e avisa a OS. Depois, a OS devolve as peças ao estoque.
+
+*(Mostre o fim da saída.)*
+
+A OS termina cancelada, e a saga termina compensada. O estoque voltou para 10, o mesmo valor do início.
+
+No fim, o script desliga a flag. Cada passo da compensação é idempotente, então uma mensagem repetida não estorna duas vezes.
+
+*(Copie o sagaId da saída. Você vai usar no bloco 5.)*
 
 **Se falhar:**
 
@@ -153,16 +196,39 @@ kubectl -n billing get pods
 
 O PR é o [#3 do Billing](https://github.com/olavowilke/soat-billing-service/pull/3). Não faça o merge antes de gravar.
 
-**Falar:**
+**Texto para ler:**
 
-- A `main` tem proteção. O PR exige CI e Sonar verdes.
-- O CI roda build, testes unitários e de integração, cobertura JaCoCo e Sonar. O OWASP dependency-check roda num job separado, que não é obrigatório.
-- Mostre o gate do SonarCloud aprovado. Cite a cobertura.
-- Mostre que o botão de merge só libera com os checks verdes.
-- Faça o merge. O CD começa sozinho.
-- O CD builda a imagem, publica e aplica no EKS.
-- Mostre o `rollout status` e os pods novos em `Running`.
-- Cada serviço tem seu pipeline. Um deploy não toca nos outros.
+Agora vamos ver o caminho de uma mudança até o EKS.
+
+*(Abra o PR do Billing.)*
+
+Este PR muda uma mensagem de log do Billing. A branch main é protegida, então nenhuma mudança entra sem PR.
+
+O PR só libera o merge com o CI verde.
+
+O CI compila, roda os testes de unidade e de integração e mede a cobertura com o JaCoCo. Depois, ele roda a análise do SonarCloud.
+
+*(Abra a aba do SonarCloud.)*
+
+O quality gate do Sonar passou. Se o gate falhar, o CI falha junto, e o merge fica bloqueado.
+
+*(Leia a cobertura que aparece na tela.)*
+
+*(Volte ao PR.)*
+
+Há também um job do OWASP dependency-check. Ele aponta CVEs nas dependências, mas não é obrigatório. Ele avisa e não bloqueia o merge.
+
+Agora eu faço o merge.
+
+*(Rode o gh pr merge. Depois abra a aba do Actions.)*
+
+O merge dispara o CD sozinho. O CD gera a imagem, publica no ECR e aplica no EKS.
+
+*(Rode o rollout status e o get pods.)*
+
+O rollout terminou, e os pods novos estão rodando.
+
+Cada serviço tem o próprio pipeline. Um deploy do Billing não toca nos outros serviços.
 
 **Se falhar:**
 
@@ -176,14 +242,29 @@ O PR é o [#3 do Billing](https://github.com/olavowilke/soat-billing-service/pul
 
 **Comandos:** nenhum. Use o `sagaId` mostrado no fim do bloco 3.
 
-**Falar:**
+**Texto para ler:**
 
-- Abra o trace distribuído. Ele cruza OS, SQS, Billing e Execution.
-- O cabeçalho `newrelic` viaja nos atributos da mensagem. Por isso o trace não quebra na fila.
-- Abra o dashboard da saga: "Sagas ativas por estado", "Sagas finalizadas por hora e resultado" (mostra as compensadas), "Mensagens por DLQ" e "Spans por servico".
-- Um alerta vigia a profundidade das DLQs.
-- Abra o painel "Logs com sagaId". Filtre por `sagaId`. Os três serviços aparecem na mesma busca.
-- Os logs são JSON. Cada linha tem `correlationId` e `sagaId`.
+Por fim, a observabilidade no New Relic.
+
+*(Abra a aba do trace distribuído. Escolha um trace com três serviços.)*
+
+Este trace cruza a OS, as filas, o Billing e o Execution.
+
+O cabeçalho do New Relic viaja nos atributos de cada mensagem da fila. Por isso, o trace não quebra quando passa pelo SQS.
+
+*(Abra o dashboard "Oficina - Saga".)*
+
+Este é o dashboard da saga. Ele mostra as sagas por estado, os resultados por hora, as mensagens em cada DLQ e os spans de cada serviço.
+
+*(Abra a aba de alertas.)*
+
+Um alerta vigia as DLQs. Se uma mensagem fica parada numa DLQ por cinco minutos, o alerta dispara.
+
+*(Abra a aba "Logs por sagaId". Filtre pelo sagaId do bloco 3.)*
+
+Aqui filtramos os logs pelo sagaId. Os três serviços aparecem na mesma busca.
+
+Os logs são JSON, e cada linha traz o correlationId e o sagaId.
 
 **Se falhar:**
 
@@ -197,13 +278,21 @@ O PR é o [#3 do Billing](https://github.com/olavowilke/soat-billing-service/pul
 
 **Comandos:** nenhum.
 
-**Falar:**
+**Texto para ler:**
 
-- Resumo: três serviços, três bancos, Saga orquestrada, filas com DLQ.
-- Mostramos o caminho feliz e a compensação.
-- Mostramos CI, Sonar, CD e observabilidade.
-- Cite os repositórios e onde achar a documentação.
-- Agradeça e encerre.
+Para fechar, um resumo.
+
+*(Mostre o diagrama.)*
+
+Dividimos a oficina em três serviços, cada um com o próprio banco. Eles coordenam o fluxo por uma Saga orquestrada, sobre filas com DLQ.
+
+Mostramos o caminho feliz e a compensação de ponta a ponta. Também mostramos o CI, o Sonar, o CD e a observabilidade.
+
+*(Abra a lista de repositórios.)*
+
+O código está em seis repositórios: os três serviços, a infra do Kubernetes, a infra do banco e a Lambda de autenticação. Cada repositório tem um README com a documentação.
+
+Obrigado.
 
 **Se falhar:** não há ação ao vivo. Se faltar tempo, pule a lista de repositórios.
 
